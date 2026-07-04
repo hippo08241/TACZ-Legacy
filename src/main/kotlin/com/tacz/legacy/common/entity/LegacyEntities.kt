@@ -16,6 +16,7 @@ import net.minecraft.entity.EntityList
 import net.minecraft.entity.EntityLivingBase
 import net.minecraft.entity.item.EntityMinecartEmpty
 import net.minecraft.entity.projectile.EntityThrowable
+import net.minecraft.entity.SharedMonsterAttributes
 import net.minecraft.nbt.NBTTagCompound
 import net.minecraft.nbt.NBTTagList
 import net.minecraft.init.Blocks
@@ -698,7 +699,17 @@ internal class EntityKineticBullet : EntityThrowable, IEntityAdditionalSpawnData
         }
         val normX = motionX / horizontalSpeed
         val normZ = motionZ / horizontalSpeed
-        target.addVelocity(normX * knockback * 0.6, 0.1, normZ * knockback * 0.6)
+
+        var effectiveKnockback = knockback
+        if (target is EntityLivingBase) {
+            val resistance = target.getEntityAttribute(SharedMonsterAttributes.KNOCKBACK_RESISTANCE).attributeValue
+            if (resistance >= 1.0) {
+                return
+            }
+            effectiveKnockback = (knockback * (1.0 - resistance)).toFloat()
+        }
+
+        target.addVelocity(normX * effectiveKnockback * 0.6, 0.1, normZ * effectiveKnockback * 0.6)
         target.velocityChanged = true
     }
 
