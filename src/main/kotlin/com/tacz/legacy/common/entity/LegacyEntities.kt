@@ -20,6 +20,7 @@ import net.minecraft.nbt.NBTTagCompound
 import net.minecraft.nbt.NBTTagList
 import net.minecraft.init.Blocks
 import net.minecraft.util.DamageSource
+import net.minecraft.util.EntityDamageSourceIndirect
 import net.minecraft.util.ResourceLocation
 import net.minecraft.util.math.AxisAlignedBB
 import net.minecraft.util.math.MathHelper
@@ -681,7 +682,9 @@ internal class EntityKineticBullet : EntityThrowable, IEntityAdditionalSpawnData
     }
 
     private fun createBulletDamageSource(ignoreArmor: Boolean): DamageSource {
-        val damageSource = DamageSource.causeThrownDamage(this, thrower).setProjectile()
+        val rawType = "tacz_bullet_${ammoId.namespace}_${ammoId.path}"
+        val damageType = rawType.replace(Regex("[^a-zA-Z0-9_]"), "_")
+        val damageSource = EntityDamageSourceIndirect(damageType, this, thrower).setProjectile()
         return if (ignoreArmor) damageSource.setDamageBypassesArmor() else damageSource
     }
 
