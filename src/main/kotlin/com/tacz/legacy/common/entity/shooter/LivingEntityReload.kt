@@ -1,5 +1,6 @@
 package com.tacz.legacy.common.entity.shooter
 
+import com.tacz.legacy.api.entity.IGunOperator
 import com.tacz.legacy.api.entity.ReloadState
 import com.tacz.legacy.api.event.GunReloadEvent
 import com.tacz.legacy.api.item.IGun
@@ -12,6 +13,7 @@ import net.minecraft.entity.EntityLivingBase
 import net.minecraftforge.common.MinecraftForge
 import net.minecraftforge.fml.relauncher.Side
 import org.luaj.vm2.lib.jse.CoerceJavaToLua
+
 
 /**
  * 服务端换弹逻辑。与上游 TACZ LivingEntityReload 行为一致。
@@ -52,15 +54,8 @@ public class LivingEntityReload(
         if (MinecraftForge.EVENT_BUS.post(reloadEvent)) return
 
         // 弹药来源检查
-        val needCheck = !gunData.isReloadInfinite
-        if (needCheck) {
-            val useInventoryAmmo = iGun.useInventoryAmmo(currentGunItem)
-            if (useInventoryAmmo) {
-                if (!iGun.hasInventoryAmmo(shooter, currentGunItem, needCheck)) return
-            } else if (iGun.useDummyAmmo(currentGunItem)) {
-                if (iGun.getDummyAmmoAmount(currentGunItem) <= 0) return
-            }
-        }
+        val needCheck = !gunData.isReloadInfinite && IGunOperator.fromLivingEntity(shooter).needCheckAmmo()
+        if (needCheck && !iGun.hasInventoryAmmo(shooter, currentGunItem, needCheck)) return
 
         if (!shooter.world.isRemote) {
             TACZNetworkHandler.sendToTrackingEntity(ServerMessageReload(shooter.entityId, currentGunItem), shooter)

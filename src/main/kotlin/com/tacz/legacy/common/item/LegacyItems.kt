@@ -486,10 +486,22 @@ internal class ModernKineticGunItem : Item(), IGun {
     }
 
     override fun hasInventoryAmmo(shooter: EntityLivingBase, stack: ItemStack, needCheckAmmo: Boolean): Boolean {
-        if (!useInventoryAmmo(stack)) return false
         if (!needCheckAmmo) return true
         if (useDummyAmmo(stack)) return getDummyAmmoAmount(stack) > 0
-        // 通过 IItemHandler capability 搜索背包弹药（与上游 TACZ 逻辑一致）
+
+        if (shooter is net.minecraft.entity.player.EntityPlayer) {
+            val inventory = shooter.inventory
+            for (slot in 0 until inventory.sizeInventory) {
+                val checkStack = inventory.getStackInSlot(slot)
+                if (checkStack.isEmpty) continue
+                val ammo = checkStack.item as? IAmmo
+                if (ammo != null && ammo.isAmmoOfGun(stack, checkStack)) return true
+                val box = checkStack.item as? IAmmoBox
+                if (box != null && box.isAmmoBoxOfGun(stack, checkStack)) return true
+            }
+            return false
+        }
+
         val handler = shooter.getCapability(CapabilityItemHandler.ITEM_HANDLER_CAPABILITY, null)
         if (handler != null) {
             for (i in 0 until handler.slots) {
