@@ -482,21 +482,22 @@ internal object FirstPersonRenderGunEvent {
         val partialTicks = prepared.partialTicks
 
         GlStateManager.pushMatrix()
-        val xBob = player.prevRenderArmPitch + (player.renderArmPitch - player.prevRenderArmPitch) * partialTicks
-        val yBob = player.prevRenderArmYaw + (player.renderArmYaw - player.prevRenderArmYaw) * partialTicks
+        val aimDamp = 1f - prepared.aimingProgress.coerceIn(0f, 1f)
+        val xBob = (player.prevRenderArmPitch + (player.renderArmPitch - player.prevRenderArmPitch) * partialTicks) * aimDamp
+        val yBob = (player.prevRenderArmYaw + (player.renderArmYaw - player.prevRenderArmYaw) * partialTicks) * aimDamp
         val xRot = player.prevRotationPitch + (player.rotationPitch - player.prevRotationPitch) * partialTicks - xBob
         val yRot = player.prevRotationYaw + (player.rotationYaw - player.prevRotationYaw) * partialTicks - yBob
 
-        GlStateManager.rotate(xRot * -0.1f, 1.0f, 0.0f, 0.0f)
-        GlStateManager.rotate(yRot * -0.1f, 0.0f, 1.0f, 0.0f)
+        GlStateManager.rotate(xRot * -0.1f * aimDamp, 1.0f, 0.0f, 0.0f)
+        GlStateManager.rotate(yRot * -0.1f * aimDamp, 0.0f, 1.0f, 0.0f)
 
         val rootNode: BedrockPart? = model.rootNode
         val rootSnapshot = rootNode?.let {
             RootNodeRenderState(it.offsetX, it.offsetY, it.offsetZ, Quaternionf(it.additionalQuaternion))
         }
-        if (rootNode != null) {
-            val clampedXRot = Math.tanh((xRot / 25).toDouble()).toFloat() * 25f
-            val clampedYRot = Math.tanh((yRot / 25).toDouble()).toFloat() * 25f
+        if (rootNode != null && aimDamp > 0f) {
+            val clampedXRot = Math.tanh((xRot / 25).toDouble()).toFloat() * 25f * aimDamp
+            val clampedYRot = Math.tanh((yRot / 25).toDouble()).toFloat() * 25f * aimDamp
             rootNode.offsetX += clampedYRot * 0.1f / 16f / 3f
             rootNode.offsetY += -clampedXRot * 0.1f / 16f / 3f
             rootNode.additionalQuaternion.mul(

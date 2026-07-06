@@ -1,5 +1,6 @@
 package com.tacz.legacy.client.sound
 
+import com.tacz.legacy.TACZLegacy
 import com.tacz.legacy.client.resource.GunDisplayInstance
 import com.tacz.legacy.common.config.LegacyConfigManager
 import com.tacz.legacy.common.resource.GunCombatData
@@ -57,9 +58,11 @@ internal object TACZClientGunSoundCoordinator {
         if (!drySoundTrack) {
             return
         }
+        val soundId = display?.getSound(SoundManager.DRY_FIRE_SOUND)
+            ?: net.minecraft.util.ResourceLocation(TACZLegacy.MOD_ID, SoundManager.DRY_FIRE_SOUND)
         GunSoundPlayManager.playClientSound(
             entity,
-            display?.getSound(SoundManager.DRY_FIRE_SOUND),
+            soundId,
             1.0f,
             randomizedPitch(entity),
             LegacyConfigManager.common.defaultGunOtherSoundDistance,

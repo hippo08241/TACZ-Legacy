@@ -23,8 +23,11 @@ import com.tacz.legacy.client.resource.index.ClientAttachmentIndex;
 import com.tacz.legacy.client.resource.pojo.display.gun.TextShow;
 import com.tacz.legacy.client.resource.pojo.model.BedrockModelPOJO;
 import com.tacz.legacy.client.resource.pojo.model.BedrockVersion;
+import com.tacz.legacy.client.util.RenderHelper;
 import com.tacz.legacy.common.resource.GunDataAccessor;
 import net.minecraft.client.renderer.BufferBuilder;
+import net.minecraft.client.renderer.GlStateManager;
+import net.minecraft.client.renderer.OpenGlHelper;
 import net.minecraft.client.renderer.Tessellator;
 import net.minecraft.client.renderer.vertex.DefaultVertexFormats;
 import net.minecraft.item.ItemStack;
@@ -62,8 +65,11 @@ import static com.tacz.legacy.client.model.GunModelConstant.REFIT_VIEW_SUFFIX;
 import static com.tacz.legacy.client.model.GunModelConstant.RIGHTHAND_POS_NODE;
 import static com.tacz.legacy.client.model.GunModelConstant.SHELL_ORIGIN_NODE;
 import static com.tacz.legacy.client.model.GunModelConstant.SHELL_ORIGIN_NODE_PREFIX;
+import static com.tacz.legacy.client.model.GunModelConstant.FIXED_ORIGIN_NODE;
+import static com.tacz.legacy.client.model.GunModelConstant.GROUND_ORIGIN_NODE;
 import static com.tacz.legacy.client.model.GunModelConstant.SIGHT;
 import static com.tacz.legacy.client.model.GunModelConstant.SIGHT_FOLDED;
+import static com.tacz.legacy.client.model.GunModelConstant.THIRD_PERSON_HAND_ORIGIN_NODE;
 
 /**
  * Gun-specific bedrock runtime used by mounted attachment rendering.
@@ -93,6 +99,12 @@ public class BedrockGunModel extends BedrockAnimatedModel {
     @Nullable
     private List<BedrockPart> ironSightPath;
     @Nullable
+    private List<BedrockPart> fixedOriginPath;
+    @Nullable
+    private List<BedrockPart> groundOriginPath;
+    @Nullable
+    private List<BedrockPart> thirdPersonHandOriginPath;
+    @Nullable
     private List<BedrockPart> scopePosPath;
     @Nullable
     private List<BedrockPart> muzzleFlashPosPath;
@@ -116,6 +128,9 @@ public class BedrockGunModel extends BedrockAnimatedModel {
         this.additionalMagazineNode = resolveNode(MAG_ADDITIONAL_NODE);
         this.idleSightPath = getPath(modelMap.get(IDLE_VIEW_NODE));
         this.ironSightPath = getPath(modelMap.get(IRON_VIEW_NODE));
+        this.fixedOriginPath = getPath(modelMap.get(FIXED_ORIGIN_NODE));
+        this.groundOriginPath = getPath(modelMap.get(GROUND_ORIGIN_NODE));
+        this.thirdPersonHandOriginPath = getPath(modelMap.get(THIRD_PERSON_HAND_ORIGIN_NODE));
         this.scopePosPath = getPath(modelMap.get(AttachmentType.SCOPE.getSerializedName() + ATTACHMENT_POS_SUFFIX));
         this.muzzleFlashPosPath = getPath(modelMap.get(MUZZLE_FLASH_ORIGIN_NODE));
         this.laserBeamPath = getPath(modelMap.get("laser_beam"));
@@ -182,25 +197,45 @@ public class BedrockGunModel extends BedrockAnimatedModel {
 
     private void allAttachmentRender() {
         for (AttachmentType type : AttachmentType.values()) {
-            if (type == AttachmentType.NONE) {
+            if (type == AttachmentType.NONE || type == AttachmentType.SCOPE) {
                 continue;
             }
             String baseNodeName = type.getSerializedName();
             String positionNodeName = baseNodeName + ATTACHMENT_POS_SUFFIX;
             String defaultNodeName = baseNodeName + DEFAULT_ATTACHMENT_SUFFIX;
-            this.setFunctionalRenderer(positionNodeName, bedrockPart -> {
-                bedrockPart.visible = false;
-                return new AttachmentRender(this, type);
-            });
-            this.setFunctionalRenderer(defaultNodeName, bedrockPart -> {
-                ItemStack attachmentItem = getAttachmentItem(type);
-                if (type == AttachmentType.MUZZLE && applyShowMuzzle(bedrockPart, attachmentItem)) {
+            if (isBoundModelNode(positionNodeName)) {
+                this.setFunctionalRenderer(positionNodeName, bedrockPart -> {
+                    bedrockPart.visible = false;
+                    return new AttachmentRender(this, type);
+                });
+            }
+            if (isBoundModelNode(defaultNodeName)) {
+                this.setFunctionalRenderer(defaultNodeName, bedrockPart -> {
+                    ItemStack attachmentItem = getAttachmentItem(type);
+                    if (type == AttachmentType.MUZZLE && applyShowMuzzle(bedrockPart, attachmentItem)) {
+                        return null;
+                    }
+                    bedrockPart.visible = attachmentItem == null || attachmentItem.isEmpty();
                     return null;
-                }
-                bedrockPart.visible = attachmentItem == null || attachmentItem.isEmpty();
+                });
+            }
+        }
+        String scopePosNode = AttachmentType.SCOPE.getSerializedName() + ATTACHMENT_POS_SUFFIX;
+        if (isBoundModelNode(scopePosNode)) {
+            this.setFunctionalRenderer(scopePosNode, bedrockPart -> {
+                bedrockPart.visible = false;
                 return null;
             });
         }
+    }
+
+    private boolean isBoundModelNode(String nodeName) {
+        ModelRendererWrapper wrapper = modelMap.get(nodeName);
+        if (wrapper == null) {
+            return false;
+        }
+        BedrockPart part = wrapper.getModelRenderer();
+        return shouldRender.contains(part) || part.getParent() != null;
     }
 
     private boolean applyShowMuzzle(BedrockPart bedrockPart, @Nullable ItemStack attachmentItem) {
@@ -309,11 +344,21 @@ public class BedrockGunModel extends BedrockAnimatedModel {
             currentAttachmentItem.clear();
             return;
         }
+        ItemStack installedExtendedMag = iGun.getAttachment(gunItem, AttachmentType.EXTENDED_MAG);
+        if (!installedExtendedMag.isEmpty()) {
+            IAttachment extendedMagAttachment = IAttachment.getIAttachmentOrNull(installedExtendedMag);
+            if (extendedMagAttachment != null) {
+                currentExtendMagLevel = GunDataAccessor.getAttachmentExtendedMagLevel(
+                        extendedMagAttachment.getAttachmentId(installedExtendedMag)
+                );
+            }
+        }
         for (AttachmentType type : AttachmentType.values()) {
             if (type == AttachmentType.NONE) {
                 continue;
             }
-            ItemStack attachmentItem = iGun.getAttachment(gunItem, type);
+            ItemStack installedItem = iGun.getAttachment(gunItem, type);
+            ItemStack attachmentItem = installedItem;
             if (attachmentItem.isEmpty()) {
                 attachmentItem = iGun.getBuiltinAttachment(gunItem, type);
             }
@@ -322,14 +367,30 @@ public class BedrockGunModel extends BedrockAnimatedModel {
             if (iAttachment == null) {
                 continue;
             }
-            if (type == AttachmentType.EXTENDED_MAG) {
-                ResourceLocation attachmentId = iAttachment.getAttachmentId(attachmentItem);
-                currentExtendMagLevel = GunDataAccessor.getAttachmentExtendedMagLevel(attachmentId);
-            }
             ClientAttachmentIndex attachmentIndex = TACZClientAssetManager.INSTANCE.getAttachmentIndex(iAttachment.getAttachmentId(attachmentItem));
             if (attachmentIndex != null && attachmentIndex.getAdapterNodeName() != null && !attachmentIndex.getAdapterNodeName().isEmpty()) {
                 adapterToRender.add(attachmentIndex.getAdapterNodeName());
             }
+        }
+        applyExtendedMagVisibility();
+    }
+
+    private void applyExtendedMagVisibility() {
+        BedrockPart standard = resolveNode(MAG_STANDARD);
+        if (standard != null) {
+            standard.visible = currentExtendMagLevel == 0;
+        }
+        BedrockPart extended1 = resolveNode(MAG_EXTENDED_1);
+        if (extended1 != null) {
+            extended1.visible = currentExtendMagLevel == 1;
+        }
+        BedrockPart extended2 = resolveNode(MAG_EXTENDED_2);
+        if (extended2 != null) {
+            extended2.visible = currentExtendMagLevel == 2;
+        }
+        BedrockPart extended3 = resolveNode(MAG_EXTENDED_3);
+        if (extended3 != null) {
+            extended3.visible = currentExtendMagLevel == 3;
         }
     }
 
@@ -358,8 +419,71 @@ public class BedrockGunModel extends BedrockAnimatedModel {
         if (laserBeamPath != null) {
             BeamRenderer.renderLaserBeam(gunItem, laserBeamPath);
         }
-        super.render();
+
+        ItemStack scopeItem = getAttachmentItem(AttachmentType.SCOPE);
+        boolean opticAdsRender = BeamRenderer.getRenderContext().isFirstPerson()
+                && AttachmentRender.resolveCurrentAimingProgress() > 0.01f;
+        boolean useStencil = false;
+        int stencilFunc = GL11.GL_ALWAYS;
+        int stencilRef = 0;
+        if (scopePosPath != null && scopeItem != null && !scopeItem.isEmpty()) {
+            GlStateManager.pushMatrix();
+            try {
+                for (BedrockPart part : scopePosPath) {
+                    part.translateAndRotateAndScale();
+                }
+                AttachmentRender.renderAttachment(
+                        scopeItem,
+                        gunItem,
+                        activeGunTexture,
+                        currentPackedLight(),
+                        false,
+                        opticAdsRender
+                );
+            } finally {
+                GlStateManager.popMatrix();
+            }
+
+            if (opticAdsRender) {
+                IAttachment scopeAttachment = IAttachment.getIAttachmentOrNull(scopeItem);
+                if (scopeAttachment != null) {
+                    ClientAttachmentIndex attachmentIndex = TACZClientAssetManager.INSTANCE.getAttachmentIndex(
+                            scopeAttachment.getAttachmentId(scopeItem)
+                    );
+                    if (attachmentIndex != null) {
+                        if (attachmentIndex.isScope() && attachmentIndex.isSight()) {
+                            useStencil = true;
+                            stencilFunc = GL11.GL_GREATER;
+                            stencilRef = 127;
+                        } else if (attachmentIndex.isScope()) {
+                            useStencil = true;
+                            stencilFunc = GL11.GL_EQUAL;
+                            stencilRef = 0;
+                        }
+                    }
+                }
+            }
+        }
+
+        if (useStencil) {
+            RenderHelper.enableItemEntityStencilTest();
+            GL11.glStencilFunc(stencilFunc, stencilRef, 0xFF);
+            GL11.glStencilOp(GL11.GL_KEEP, GL11.GL_KEEP, GL11.GL_KEEP);
+        }
+        try {
+            super.render();
+        } finally {
+            RenderHelper.disableItemEntityStencilTest();
+            GL11.glStencilFunc(GL11.GL_ALWAYS, 0, 0xFF);
+            GL11.glStencilOp(GL11.GL_KEEP, GL11.GL_KEEP, GL11.GL_KEEP);
+            GL11.glClearStencil(0);
+            GL11.glClear(GL11.GL_STENCIL_BUFFER_BIT);
+        }
         logFocusedSmokeMagRenderState(gunItem);
+    }
+
+    private static int currentPackedLight() {
+        return (int) OpenGlHelper.lastBrightnessX | ((int) OpenGlHelper.lastBrightnessY << 16);
     }
 
     public void renderBloom(ItemStack gunItem) {
@@ -493,6 +617,21 @@ public class BedrockGunModel extends BedrockAnimatedModel {
     @Nullable
     public List<BedrockPart> getIronSightPath() {
         return ironSightPath;
+    }
+
+    @Nullable
+    public List<BedrockPart> getFixedOriginPath() {
+        return fixedOriginPath;
+    }
+
+    @Nullable
+    public List<BedrockPart> getGroundOriginPath() {
+        return groundOriginPath;
+    }
+
+    @Nullable
+    public List<BedrockPart> getThirdPersonHandOriginPath() {
+        return thirdPersonHandOriginPath;
     }
 
     @Nullable

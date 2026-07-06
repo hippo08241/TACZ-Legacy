@@ -120,7 +120,7 @@ public final class FirstPersonFovHooks {
                     return resolveItemModelFovTarget(
                             attachmentIndex.getViewsFov(),
                             iAttachment.getZoomNumber(scopeStack),
-                            null,
+                            attachmentIndex.getViewsFov() == null ? attachmentIndex.getFov() : null,
                             originalFov
                     );
                 }

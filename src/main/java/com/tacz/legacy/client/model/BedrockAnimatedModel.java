@@ -202,6 +202,22 @@ public class BedrockAnimatedModel extends BedrockModel implements AnimationListe
             modelMap.put(node, new ModelRendererWrapper(functionalPart));
         } else if (wrapper.getModelRenderer() instanceof FunctionalBedrockPart) {
             ((FunctionalBedrockPart) wrapper.getModelRenderer()).functionalRenderer = function;
+        } else {
+            FunctionalBedrockPart functionalPart = new FunctionalBedrockPart(function, wrapper.getModelRenderer());
+            modelMap.put(node, new ModelRendererWrapper(functionalPart));
+            replacePartReference(wrapper.getModelRenderer(), functionalPart);
+        }
+    }
+
+    private void replacePartReference(BedrockPart oldPart, BedrockPart newPart) {
+        if (shouldRender.remove(oldPart)) {
+            shouldRender.add(newPart);
+        }
+        for (ModelRendererWrapper candidate : modelMap.values()) {
+            BedrockPart parent = candidate.getModelRenderer();
+            if (parent.children.remove(oldPart)) {
+                parent.addChild(newPart);
+            }
         }
     }
 

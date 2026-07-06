@@ -185,13 +185,20 @@ public class GunDisplayInstance {
     }
 
     private void checkSounds(GunDisplay display) {
-        Map<String, ResourceLocation> soundMaps = display.getSounds();
-        if (soundMaps != null && !soundMaps.isEmpty()) {
-            soundMaps.putIfAbsent(SoundManager.HEAD_HIT_SOUND, new ResourceLocation(TACZLegacy.MOD_ID, SoundManager.HEAD_HIT_SOUND));
-            soundMaps.putIfAbsent(SoundManager.FLESH_HIT_SOUND, new ResourceLocation(TACZLegacy.MOD_ID, SoundManager.FLESH_HIT_SOUND));
-            soundMaps.putIfAbsent(SoundManager.KILL_SOUND, new ResourceLocation(TACZLegacy.MOD_ID, SoundManager.KILL_SOUND));
-            sounds.putAll(soundMaps);
+        Map<String, ResourceLocation> soundMaps = Maps.newHashMap();
+        soundMaps.putIfAbsent(SoundManager.DRY_FIRE_SOUND, new ResourceLocation(TACZLegacy.MOD_ID, SoundManager.DRY_FIRE_SOUND));
+        soundMaps.putIfAbsent(SoundManager.FIRE_SELECT, new ResourceLocation(TACZLegacy.MOD_ID, SoundManager.FIRE_SELECT));
+        soundMaps.putIfAbsent(SoundManager.HEAD_HIT_SOUND, new ResourceLocation(TACZLegacy.MOD_ID, SoundManager.HEAD_HIT_SOUND));
+        soundMaps.putIfAbsent(SoundManager.FLESH_HIT_SOUND, new ResourceLocation(TACZLegacy.MOD_ID, SoundManager.FLESH_HIT_SOUND));
+        soundMaps.putIfAbsent(SoundManager.KILL_SOUND, new ResourceLocation(TACZLegacy.MOD_ID, SoundManager.KILL_SOUND));
+        soundMaps.putIfAbsent(SoundManager.MELEE_BAYONET, new ResourceLocation(TACZLegacy.MOD_ID, "melee_bayonet/melee_bayonet_01"));
+        soundMaps.putIfAbsent(SoundManager.MELEE_STOCK, new ResourceLocation(TACZLegacy.MOD_ID, "melee_stock/melee_stock_02"));
+        soundMaps.putIfAbsent(SoundManager.MELEE_PUSH, new ResourceLocation(TACZLegacy.MOD_ID, "melee_stock/melee_stock_01"));
+        Map<String, ResourceLocation> configuredSounds = display.getSounds();
+        if (configuredSounds != null && !configuredSounds.isEmpty()) {
+            soundMaps.putAll(configuredSounds);
         }
+        sounds.putAll(soundMaps);
     }
 
     private void checkTransform(GunDisplay display) {

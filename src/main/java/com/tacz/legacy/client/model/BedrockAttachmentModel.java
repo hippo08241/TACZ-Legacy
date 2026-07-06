@@ -79,7 +79,6 @@ public class BedrockAttachmentModel extends BedrockAnimatedModel {
         cacheOpticNodePaths();
         cacheLaserBeamPaths();
         hideIndexedNodes(SCOPE_VIEW_NODE);
-        hideIndexedNodes(DIVISION_NODE);
         hideIndexedNodes(OCULAR_NODE);
         hideIndexedNodes(OCULAR_SCOPE_NODE);
         hideIndexedNodes(OCULAR_SIGHT_NODE);
@@ -117,13 +116,22 @@ public class BedrockAttachmentModel extends BedrockAnimatedModel {
         }
 
         ModelRendererWrapper divisionWrapper = modelMap.get(DIVISION_NODE);
-        int divisionIndex = 2;
-        while (divisionWrapper != null) {
-            List<BedrockPart> path = getPath(divisionWrapper);
-            if (path != null) {
-                divisionNodePaths.add(path);
+        if (divisionWrapper != null) {
+            List<BedrockPart> firstDivisionPath = getPath(divisionWrapper);
+            if (firstDivisionPath != null) {
+                divisionNodePaths.add(firstDivisionPath);
+                divisionWrapper.setHidden(true);
             }
-            divisionWrapper = modelMap.get(DIVISION_NODE + '_' + divisionIndex++);
+        }
+        int divisionIndex = 2;
+        divisionWrapper = modelMap.get(DIVISION_NODE + '_' + divisionIndex);
+        List<BedrockPart> divisionPath = getPath(divisionWrapper);
+        while (divisionPath != null) {
+            divisionNodePaths.add(divisionPath);
+            divisionWrapper.setHidden(true);
+            divisionIndex++;
+            divisionWrapper = modelMap.get(DIVISION_NODE + '_' + divisionIndex);
+            divisionPath = getPath(divisionWrapper);
         }
 
         scopeBodyPath = getPath(modelMap.get(SCOPE_BODY_NODE));
@@ -193,6 +201,22 @@ public class BedrockAttachmentModel extends BedrockAnimatedModel {
     public void setTextShowList(Map<String, TextShow> textShowList) {
         textShowList.forEach((name, textShow) -> setFunctionalRenderer(name,
             bedrockPart -> new TextShowRender(this, textShow, currentGunItem)));
+    }
+
+    /**
+     * Renders an attachment mounted on a gun bone. Skips the first-person optic
+     * stencil pipeline so exterior geometry stays visible in hand/world views.
+     */
+    public void renderMountedOnGun(@Nullable ItemStack attachmentItem, @Nullable ItemStack currentGunItem) {
+        this.attachmentItem = attachmentItem;
+        this.currentGunItem = currentGunItem;
+        if (!isScope && !isSight) {
+            renderLaserBeams();
+        }
+        super.render();
+        if (isScope || isSight) {
+            renderLaserBeams();
+        }
     }
 
     public void render(@Nullable ItemStack attachmentItem, @Nullable ItemStack currentGunItem) {
@@ -452,9 +476,10 @@ public class BedrockAttachmentModel extends BedrockAnimatedModel {
                 path.get(i).translateAndRotateAndScale();
             }
             BedrockPart part = path.get(path.size() - 1);
+            boolean previousVisible = part.visible;
             part.visible = true;
             part.render();
-            part.visible = false;
+            part.visible = previousVisible;
         } finally {
             GlStateManager.popMatrix();
         }

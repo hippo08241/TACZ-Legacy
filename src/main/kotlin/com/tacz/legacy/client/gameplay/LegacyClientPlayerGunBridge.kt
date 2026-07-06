@@ -339,6 +339,9 @@ internal object LegacyClientPlayerGunBridge {
         if (shootDown) {
             player.isSprinting = false
             cancelReloadIfNeeded(stack, operator)
+            if (lastShootSuccess && fireMode != FireMode.AUTO && !isBurstAuto && isHeldGunOutOfAmmo(player, stack, iGun, operator)) {
+                lastShootSuccess = false
+            }
             val shouldAttempt = fireMode == FireMode.AUTO || isBurstAuto || !lastShootSuccess
             if (shouldAttempt) {
                 val result = attemptShoot(player, operator)
@@ -361,6 +364,21 @@ internal object LegacyClientPlayerGunBridge {
             TACZClientGunSoundCoordinator.resetDryFireSound()
         }
         lastShootKeyDown = shootDown
+    }
+
+    private fun isHeldGunOutOfAmmo(
+        player: EntityPlayerSP,
+        stack: ItemStack,
+        iGun: IGun,
+        operator: IGunOperator,
+    ): Boolean {
+        val gunData = GunDataAccessor.getGunData(iGun.getGunId(stack)) ?: return true
+        val boltType = gunData.boltType
+        val useInventoryAmmo = iGun.useInventoryAmmo(stack)
+        val hasAmmoInBarrel = iGun.hasBulletInBarrel(stack) && boltType != BoltType.OPEN_BOLT
+        val hasInventoryAmmo = iGun.hasInventoryAmmo(player, stack, operator.needCheckAmmo()) || hasAmmoInBarrel
+        val ammoCount = iGun.getCurrentAmmoCount(stack) + (if (hasAmmoInBarrel) 1 else 0)
+        return (useInventoryAmmo && !hasInventoryAmmo) || (!useInventoryAmmo && ammoCount < 1)
     }
 
     private fun beginPutAwayAndKeep(stack: ItemStack) {

@@ -521,6 +521,9 @@ internal class GunRefitScreen : GuiScreen() {
 			val button = AttachmentSlotButton(BUTTON_SLOT_BASE + type.ordinal, x, SLOT_BAR_Y, type)
 			slotButtons += button
 			addButton(button)
+			if (selectedType == type && hasRemovableAttachment(type)) {
+				unloadButton = addButton(UnloadButton(BUTTON_UNLOAD, button.x + 5, button.y + SLOT_SIZE + 2))
+			}
 			x -= SLOT_SIZE
 		}
 	}
@@ -557,14 +560,6 @@ internal class GunRefitScreen : GuiScreen() {
 					listOf(I18n.format("tooltip.tacz.page.next")),
 				),
 			)
-		}
-
-		val iGun = currentIGun() ?: return
-		val installed = iGun.getAttachment(currentGunStack(), selectedType)
-		if (!installed.isEmpty) {
-			slotButtons.firstOrNull { it.type == selectedType }?.let { slotButton ->
-				unloadButton = addButton(UnloadButton(BUTTON_UNLOAD, slotButton.x + 5, slotButton.y + SLOT_SIZE + 2))
-			}
 		}
 
 		pageItems.forEachIndexed { index, candidate ->
@@ -858,6 +853,11 @@ internal class GunRefitScreen : GuiScreen() {
 		return ((total - 1).coerceAtLeast(0)) / CANDIDATES_PER_PAGE
 	}
 
+	private fun hasRemovableAttachment(type: AttachmentType): Boolean {
+		val iGun = currentIGun() ?: return false
+		return !iGun.getAttachment(currentGunStack(), type).isEmpty
+	}
+
 	private fun tryUnloadSelectedAttachment() {
 		val player = currentPlayer() ?: return
 		val gunStack = currentGunStack()
@@ -870,8 +870,10 @@ internal class GunRefitScreen : GuiScreen() {
 			player.sendMessage(TextComponentTranslation("gui.tacz.gun_refit.unload.no_space"))
 			return
 		}
-		TACZNetworkHandler.sendToServer(ClientMessageUnloadAttachment(player.inventory.currentItem, selectedType))
+		TACZNetworkHandler.sendToServer(ClientMessageUnloadAttachment(mainHandSlotIndex(), selectedType))
 	}
+
+	private fun mainHandSlotIndex(): Int = currentPlayer()?.inventory?.currentItem ?: 0
 
 	private fun currentLaserConfig(): TACZAttachmentLaserConfigDefinition? {
 		val gunStack = currentGunStack()
@@ -1422,10 +1424,19 @@ internal class GunRefitScreen : GuiScreen() {
 				return
 			}
 			hovered = contains(mouseX, mouseY)
+			GlStateManager.disableDepth()
+			GlStateManager.enableBlend()
+			GlStateManager.tryBlendFuncSeparate(
+				GlStateManager.SourceFactor.SRC_ALPHA,
+				GlStateManager.DestFactor.ONE_MINUS_SRC_ALPHA,
+				GlStateManager.SourceFactor.ONE,
+				GlStateManager.DestFactor.ZERO,
+			)
 			GlStateManager.color(1f, 1f, 1f, 1f)
 			mc.textureManager.bindTexture(TACZ_REFIT_UNLOAD_TEXTURE)
 			val u = if (hovered) 0f else 80f
 			drawModalRectWithCustomSizedTexture(x, y, u, 0f, width, height, 160f, 80f)
+			GlStateManager.enableDepth()
 		}
 
 		override fun contains(mouseX: Int, mouseY: Int): Boolean = mouseX >= x && mouseY >= y && mouseX < x + width && mouseY < y + height

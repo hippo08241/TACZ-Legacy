@@ -1,6 +1,5 @@
 package com.tacz.legacy.common.entity.shooter
 
-import com.tacz.legacy.api.entity.IGunOperator
 import com.tacz.legacy.api.entity.ReloadState
 import com.tacz.legacy.api.event.GunReloadEvent
 import com.tacz.legacy.api.item.IGun
@@ -9,11 +8,12 @@ import com.tacz.legacy.common.network.message.event.ServerMessageReload
 import com.tacz.legacy.common.resource.BoltType
 import com.tacz.legacy.common.resource.GunCombatData
 import com.tacz.legacy.common.resource.GunDataAccessor
+import com.tacz.legacy.common.item.hasCompatibleReserveAmmo
 import net.minecraft.entity.EntityLivingBase
+import net.minecraft.entity.player.EntityPlayer
 import net.minecraftforge.common.MinecraftForge
 import net.minecraftforge.fml.relauncher.Side
 import org.luaj.vm2.lib.jse.CoerceJavaToLua
-
 
 /**
  * 服务端换弹逻辑。与上游 TACZ LivingEntityReload 行为一致。
@@ -53,9 +53,30 @@ public class LivingEntityReload(
         val reloadEvent = GunReloadEvent(shooter, currentGunItem, logicalSide)
         if (MinecraftForge.EVENT_BUS.post(reloadEvent)) return
 
-        // 弹药来源检查
-        val needCheck = !gunData.isReloadInfinite && IGunOperator.fromLivingEntity(shooter).needCheckAmmo()
-        if (needCheck && !iGun.hasInventoryAmmo(shooter, currentGunItem, needCheck)) return
+        // 弹药来源检查（创造模式与无限装填武器跳过）
+        val isCreativePlayer = shooter is EntityPlayer && shooter.capabilities.isCreativeMode
+        val needCheck = !gunData.isReloadInfinite && !isCreativePlayer
+        if (needCheck) {
+            val useInventoryAmmo = iGun.useInventoryAmmo(currentGunItem)
+            if (useInventoryAmmo) {
+                if (!iGun.hasInventoryAmmo(shooter, currentGunItem, needCheck)) return
+            } else if (iGun.useDummyAmmo(currentGunItem)) {
+                if (iGun.getDummyAmmoAmount(currentGunItem) <= 0) return
+            }
+        }
+
+        val ammoInGun = currentAmmo + if (hasBulletInBarrel && gunData.boltType != BoltType.OPEN_BOLT) 1 else 0
+        if (needCheck && ammoInGun <= 0) {
+            val hasReserve = when {
+                iGun.useInventoryAmmo(currentGunItem) ->
+                    iGun.hasInventoryAmmo(shooter, currentGunItem, needCheck)
+                iGun.useDummyAmmo(currentGunItem) ->
+                    iGun.getDummyAmmoAmount(currentGunItem) > 0
+                else ->
+                    hasCompatibleReserveAmmo(shooter, currentGunItem)
+            }
+            if (!hasReserve) return
+        }
 
         if (!shooter.world.isRemote) {
             TACZNetworkHandler.sendToTrackingEntity(ServerMessageReload(shooter.entityId, currentGunItem), shooter)

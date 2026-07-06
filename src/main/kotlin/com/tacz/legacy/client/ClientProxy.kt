@@ -1,6 +1,7 @@
 package com.tacz.legacy.client
 
 import com.tacz.legacy.TACZLegacy
+import com.tacz.legacy.api.client.other.ThirdPersonManager
 import com.tacz.legacy.client.animation.screen.RefitTransform
 import com.tacz.legacy.client.audio.TACZClientAudioHooks
 import com.tacz.legacy.client.event.FirstPersonRenderGunEvent
@@ -57,6 +58,7 @@ internal class ClientProxy : CommonProxy() {
 
     override fun preInit(): Unit {
         super.preInit()
+        ThirdPersonManager.registerDefault()
         RenderingRegistry.registerEntityRenderingHandler(
             EntityKineticBullet::class.java,
             IRenderFactory { manager -> RenderKineticBullet(manager) },
@@ -76,6 +78,8 @@ internal class ClientProxy : CommonProxy() {
         LegacyItems.WORKBENCH_A.setTileEntityItemStackRenderer(TACZBlockItemRenderer)
         LegacyItems.WORKBENCH_B.setTileEntityItemStackRenderer(TACZBlockItemRenderer)
         LegacyItems.WORKBENCH_C.setTileEntityItemStackRenderer(TACZBlockItemRenderer)
+
+        ModelRegisterer.registerAmmoBoxPropertyOverride()
 
         // World-space TESR for gun smith table / workbench blocks
         ClientRegistry.bindTileEntitySpecialRenderer(GunSmithTableTileEntity::class.java, GunSmithTableTileEntityRenderer())

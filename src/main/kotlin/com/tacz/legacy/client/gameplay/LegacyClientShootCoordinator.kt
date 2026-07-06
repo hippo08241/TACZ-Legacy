@@ -89,6 +89,17 @@ internal object LegacyClientShootCoordinator {
         val gunData = GunDataAccessor.getGunData(gunId) ?: return ShootResult.ID_NOT_EXIST
         val display = LegacyClientGunAnimationDriver.resolveDisplayInstance(stack)
 
+        val boltType = gunData.boltType
+        val useInventoryAmmo = iGun.useInventoryAmmo(stack)
+        val hasAmmoInBarrel = iGun.hasBulletInBarrel(stack) && boltType != BoltType.OPEN_BOLT
+        val hasInventoryAmmo = iGun.hasInventoryAmmo(player, stack, true) || hasAmmoInBarrel
+        val ammoCount = iGun.getCurrentAmmoCount(stack) + (if (hasAmmoInBarrel) 1 else 0)
+        val noAmmo = (useInventoryAmmo && !hasInventoryAmmo) || (!useInventoryAmmo && ammoCount < 1)
+        if (noAmmo) {
+            TACZClientGunSoundCoordinator.playDryFireSound(player, display)
+            return ShootResult.NO_AMMO
+        }
+
         val coolDown = getClientShootCoolDown(stack, iGun, gunData)
         if (coolDown > 0L) return ShootResult.COOL_DOWN
         if (operator.getSynReloadState().stateType.isReloading()) return ShootResult.IS_RELOADING
@@ -96,16 +107,6 @@ internal object LegacyClientShootCoordinator {
         if (operator.getSynIsBolting()) return ShootResult.IS_BOLTING
         if (operator.getSynMeleeCoolDown() != 0L) return ShootResult.IS_MELEE
 
-        val boltType = gunData.boltType
-        val useInventoryAmmo = iGun.useInventoryAmmo(stack)
-        val hasAmmoInBarrel = iGun.hasBulletInBarrel(stack) && boltType != BoltType.OPEN_BOLT
-        val hasInventoryAmmo = iGun.hasInventoryAmmo(player, stack, operator.needCheckAmmo()) || hasAmmoInBarrel
-        val ammoCount = iGun.getCurrentAmmoCount(stack) + (if (hasAmmoInBarrel) 1 else 0)
-        val noAmmo = (useInventoryAmmo && !hasInventoryAmmo) || (!useInventoryAmmo && ammoCount < 1)
-        if (noAmmo) {
-            TACZClientGunSoundCoordinator.playDryFireSound(player, display)
-            return ShootResult.NO_AMMO
-        }
         if (gunData.hasHeatData && iGun.isOverheatLocked(stack)) {
             TACZClientGunSoundCoordinator.playDryFireSound(player, display)
             return ShootResult.OVERHEATED
@@ -133,6 +134,7 @@ internal object LegacyClientShootCoordinator {
             }
             logFocusedSmokeShootTrigger(gunId.toString(), display, animationTriggered, phase = "attempt")
             TACZClientGunSoundCoordinator.stopPlayGunSound(display, SoundManager.INSPECT_SOUND)
+            TACZClientGunSoundCoordinator.resetDryFireSound()
             if (TACZGunSoundRouting.resolveNearbyFireSoundProfile(stack).useSilenceSound) {
                 TACZClientGunSoundCoordinator.playSilenceSound(player, display, gunData)
             } else {

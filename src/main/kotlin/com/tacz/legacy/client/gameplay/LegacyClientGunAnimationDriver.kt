@@ -1,6 +1,7 @@
 package com.tacz.legacy.client.gameplay
 
 import com.tacz.legacy.api.client.animation.statemachine.AnimationStateMachine
+import com.tacz.legacy.api.entity.IGunOperator
 import com.tacz.legacy.api.item.IGun
 import com.tacz.legacy.api.item.attachment.AttachmentType
 import com.tacz.legacy.client.animation.statemachine.GunAnimationConstant
@@ -30,11 +31,12 @@ internal object LegacyClientGunAnimationDriver {
         moveForward: Float,
         moveStrafe: Float,
         movementInputMissing: Boolean = false,
+        isAiming: Boolean = false,
     ): String {
         if (movementInputMissing) {
             return GunAnimationConstant.INPUT_IDLE
         }
-        if (!isSneaking && isSprinting) {
+        if (!isSneaking && isSprinting && !isAiming) {
             return GunAnimationConstant.INPUT_RUN
         }
         val isMoving = abs(moveForward) > 0.01f || abs(moveStrafe) > 0.01f
@@ -171,12 +173,14 @@ internal object LegacyClientGunAnimationDriver {
         val display = resolveDisplayInstance(stack) ?: return false
         val stateMachine = display.animationStateMachine ?: return false
         val movement = player.movementInput
+        val isAiming = IGunOperator.fromLivingEntity(player).getSynAimingProgress() > 0.05f
         val input = determineLoopInput(
             isSprinting = player.isSprinting,
             isSneaking = player.isSneaking,
             moveForward = movement?.moveForward ?: 0f,
             moveStrafe = movement?.moveStrafe ?: 0f,
             movementInputMissing = movement == null,
+            isAiming = isAiming,
         )
         return trigger(stateMachine, input, stack, display)
     }

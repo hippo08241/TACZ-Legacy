@@ -6,14 +6,16 @@
   "compatibilityLevel": "JAVA_8",
   "priority": 1000,
   "mixins": [
-    "LivingEntityMixin"
+    "LivingEntityMixin",
+    "ContainerMixin"
   ],
   "client": [
     "client.EntityRendererMixin",
     "client.EntityRendererInvoker",
     "client.MinecraftInvoker",
     "client.MinecraftMixin",
-    "client.ItemRendererMixin"
+    "client.ItemRendererMixin",
+    "client.ModelPlayerMixin"
   ],
   "server": []
 }

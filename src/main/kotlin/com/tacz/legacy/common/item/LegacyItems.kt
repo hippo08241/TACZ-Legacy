@@ -21,13 +21,13 @@ import net.minecraft.block.state.IBlockState
 import net.minecraft.client.util.ITooltipFlag
 import net.minecraft.creativetab.CreativeTabs
 import net.minecraft.entity.EntityLivingBase
+import net.minecraft.util.NonNullList
 import net.minecraft.entity.player.EntityPlayer
 import net.minecraft.item.Item
 import net.minecraft.item.ItemBlock
 import net.minecraft.item.ItemStack
 import net.minecraft.nbt.NBTTagCompound
 import net.minecraft.util.EnumFacing
-import net.minecraft.util.NonNullList
 import net.minecraft.util.ResourceLocation
 import net.minecraft.util.math.BlockPos
 import net.minecraft.util.text.TextFormatting
@@ -289,8 +289,35 @@ internal class AmmoBoxItem : Item(), IAmmoBox {
 
     override fun getCreativeTabs(): Array<CreativeTabs> = arrayOf(LegacyCreativeTabs.OTHER)
 
+    override fun getSubItems(tab: CreativeTabs, items: NonNullList<ItemStack>) {
+        if (!isInCreativeTab(tab)) {
+            return
+        }
+        val base = ItemStack(this)
+        items.add(setAmmoLevel(base.copy(), IRON_LEVEL))
+        items.add(setAmmoLevel(base.copy(), GOLD_LEVEL))
+        items.add(setAmmoLevel(base.copy(), DIAMOND_LEVEL))
+        items.add(setCreative(base.copy(), true))
+        val allTypeCreative = base.copy()
+        setAllTypeCreative(allTypeCreative, true)
+        items.add(allTypeCreative)
+    }
+
     override fun getItemStackDisplayName(stack: ItemStack): String {
-        return LegacyRuntimeTooltipSupport.resolveDisplayName(stack, super.getItemStackDisplayName(stack))
+        val key = when {
+            isAllTypeCreative(stack) -> "item.tacz.ammo_box.all_type_creative"
+            isCreative(stack) -> "item.tacz.ammo_box.creative"
+            getAmmoLevel(stack) == GOLD_LEVEL -> "item.tacz.ammo_box.gold"
+            getAmmoLevel(stack) == DIAMOND_LEVEL -> "item.tacz.ammo_box.diamond"
+            else -> "item.tacz.ammo_box.iron"
+        }
+        val color = when {
+            isAllTypeCreative(stack) || isCreative(stack) -> net.minecraft.util.text.TextFormatting.DARK_PURPLE
+            getAmmoLevel(stack) == GOLD_LEVEL -> net.minecraft.util.text.TextFormatting.YELLOW
+            getAmmoLevel(stack) == DIAMOND_LEVEL -> net.minecraft.util.text.TextFormatting.AQUA
+            else -> net.minecraft.util.text.TextFormatting.GRAY
+        }
+        return color.toString() + net.minecraft.util.text.translation.I18n.translateToLocal(key)
     }
 
     override fun getAmmoId(ammoBox: ItemStack): ResourceLocation {
@@ -335,17 +362,86 @@ internal class AmmoBoxItem : Item(), IAmmoBox {
         return ammoBox.tagCompound?.getBoolean(ALL_TYPE_CREATIVE_TAG) ?: false
     }
 
+    override fun getAmmoLevel(ammoBox: ItemStack): Int {
+        return ammoBox.tagCompound?.getInteger(AMMO_LEVEL_TAG) ?: IRON_LEVEL
+    }
+
+    override fun setAmmoLevel(ammoBox: ItemStack, level: Int): ItemStack {
+        ensureTag(ammoBox).setInteger(AMMO_LEVEL_TAG, level.coerceIn(IRON_LEVEL, DIAMOND_LEVEL))
+        return ammoBox
+    }
+
+    override fun setCreative(ammoBox: ItemStack, creative: Boolean): ItemStack {
+        ensureTag(ammoBox).setBoolean(CREATIVE_TAG, creative)
+        if (creative) {
+            setAmmoCount(ammoBox, Int.MAX_VALUE)
+        }
+        return ammoBox
+    }
+
+    private fun setAllTypeCreative(ammoBox: ItemStack, allTypeCreative: Boolean): ItemStack {
+        ensureTag(ammoBox).setBoolean(ALL_TYPE_CREATIVE_TAG, allTypeCreative)
+        if (allTypeCreative) {
+            setAmmoCount(ammoBox, Int.MAX_VALUE)
+        }
+        return ammoBox
+    }
+
     internal companion object {
         internal const val AMMO_ID_TAG: String = "AmmoId"
         internal const val AMMO_COUNT_TAG: String = "AmmoCount"
+        internal const val AMMO_LEVEL_TAG: String = "AmmoLevel"
         internal const val CREATIVE_TAG: String = "Creative"
         internal const val ALL_TYPE_CREATIVE_TAG: String = "AllTypeCreative"
+        internal const val IRON_LEVEL: Int = 0
+        internal const val GOLD_LEVEL: Int = 1
+        internal const val DIAMOND_LEVEL: Int = 2
+        private const val DEFAULT_TINT_COLOR: Int = 0x0072580B
+
+        @JvmStatic
+        internal fun getStatue(stack: ItemStack, box: IAmmoBox): Int {
+            if (box.isAllTypeCreative(stack)) {
+                return 8
+            }
+            val openStatue = getOpenStatue(stack, box)
+            if (box.isCreative(stack)) {
+                return openStatue + 6
+            }
+            return openStatue + box.getAmmoLevel(stack) * 2
+        }
+
+        private fun getOpenStatue(stack: ItemStack, box: IAmmoBox): Int {
+            val emptyAmmoId = box.getAmmoId(stack) == DefaultAssets.EMPTY_AMMO_ID
+            if (emptyAmmoId) {
+                return 0
+            }
+            return if (box.getAmmoCount(stack) > 0) 1 else 0
+        }
+
+        @JvmStatic
+        internal fun getTintColor(stack: ItemStack): Int {
+            val display = stack.tagCompound?.getCompoundTag("display") ?: return DEFAULT_TINT_COLOR
+            return if (display.hasKey("color", 99)) display.getInteger("color") else DEFAULT_TINT_COLOR
+        }
     }
 
     @SideOnly(Side.CLIENT)
     override fun addInformation(stack: ItemStack, worldIn: World?, tooltip: MutableList<String>, flagIn: ITooltipFlag) {
         LegacyRuntimeTooltipSupport.appendTooltip(stack, tooltip, flagIn.isAdvanced)
     }
+}
+
+internal fun hasCompatibleReserveAmmo(shooter: EntityLivingBase, gunStack: ItemStack): Boolean {
+    val handler = shooter.getCapability(CapabilityItemHandler.ITEM_HANDLER_CAPABILITY, null) ?: return false
+    for (slot in 0 until handler.slots) {
+        val checkStack = handler.getStackInSlot(slot)
+        if (checkStack.isEmpty) continue
+        val ammo = checkStack.item as? IAmmo
+        if (ammo != null && ammo.isAmmoOfGun(gunStack, checkStack)) return true
+        val box = checkStack.item as? IAmmoBox
+        if (box != null && box.isAmmoBoxOfGun(gunStack, checkStack)) return true
+    }
+    return false
 }
 
 internal class ModernKineticGunItem : Item(), IGun {
@@ -486,22 +582,10 @@ internal class ModernKineticGunItem : Item(), IGun {
     }
 
     override fun hasInventoryAmmo(shooter: EntityLivingBase, stack: ItemStack, needCheckAmmo: Boolean): Boolean {
+        if (!useInventoryAmmo(stack)) return false
         if (!needCheckAmmo) return true
         if (useDummyAmmo(stack)) return getDummyAmmoAmount(stack) > 0
-
-        if (shooter is net.minecraft.entity.player.EntityPlayer) {
-            val inventory = shooter.inventory
-            for (slot in 0 until inventory.sizeInventory) {
-                val checkStack = inventory.getStackInSlot(slot)
-                if (checkStack.isEmpty) continue
-                val ammo = checkStack.item as? IAmmo
-                if (ammo != null && ammo.isAmmoOfGun(stack, checkStack)) return true
-                val box = checkStack.item as? IAmmoBox
-                if (box != null && box.isAmmoBoxOfGun(stack, checkStack)) return true
-            }
-            return false
-        }
-
+        // 通过 IItemHandler capability 搜索背包弹药（与上游 TACZ 逻辑一致）
         val handler = shooter.getCapability(CapabilityItemHandler.ITEM_HANDLER_CAPABILITY, null)
         if (handler != null) {
             for (i in 0 until handler.slots) {

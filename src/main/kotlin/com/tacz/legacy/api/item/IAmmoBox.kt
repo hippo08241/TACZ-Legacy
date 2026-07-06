@@ -12,6 +12,9 @@ public interface IAmmoBox {
     public fun getAmmoCount(ammoBox: ItemStack): Int
     public fun setAmmoCount(ammoBox: ItemStack, count: Int)
     public fun isAmmoBoxOfGun(gun: ItemStack, ammoBox: ItemStack): Boolean
+    public fun getAmmoLevel(ammoBox: ItemStack): Int
+    public fun setAmmoLevel(ammoBox: ItemStack, level: Int): ItemStack
     public fun isCreative(ammoBox: ItemStack): Boolean
     public fun isAllTypeCreative(ammoBox: ItemStack): Boolean
+    public fun setCreative(ammoBox: ItemStack, creative: Boolean): ItemStack
 }
