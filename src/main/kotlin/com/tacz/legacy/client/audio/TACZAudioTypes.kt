@@ -3,8 +3,8 @@ package com.tacz.legacy.client.audio
 import net.minecraft.util.ResourceLocation
 
 internal enum class TACZAudioBackendMode(private vararg val aliases: String) {
-    DIRECT_OPENAL("direct-openal", "direct_openal", "openal", "legacy-minecraft", "legacy", "minecraft"),
-    VANILLA_MINECRAFT("vanilla-minecraft", "vanilla_minecraft", "soundhandler", "sound-handler", "paulscode"),
+DIRECT_OPENAL("direct-openal", "direct_openal", "openal"),
+VANILLA_MINECRAFT("vanilla-minecraft", "vanilla_minecraft", "soundhandler", "sound-handler", "paulscode", "legacy-minecraft", "legacy", "minecraft"),
     NULL("null", "silent"),
     DIAGNOSTIC("diagnostic", "inspect", "probe");
 
@@ -14,7 +14,7 @@ internal enum class TACZAudioBackendMode(private vararg val aliases: String) {
             val normalized = rawValue?.trim()?.lowercase().orEmpty()
             return values().firstOrNull { mode ->
                 mode.aliases.any { alias -> alias == normalized }
-            } ?: DIRECT_OPENAL
+            } ?: VANILLA_MINECRAFT
         }
     }
 }

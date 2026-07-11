@@ -7,8 +7,8 @@ import org.junit.Test
 
 class TACZOpenALSoundEngineTest {
     @Test
-    fun `legacy minecraft alias resolves to restored direct backend`() {
-        assertEquals(TACZAudioBackendMode.DIRECT_OPENAL, TACZAudioBackendMode.fromProperty("legacy-minecraft"))
+    fun `legacy minecraft alias resolves to vanilla bridge backend`() {
+        assertEquals(TACZAudioBackendMode.VANILLA_MINECRAFT, TACZAudioBackendMode.fromProperty("legacy-minecraft"))
     }
 
     @Test
