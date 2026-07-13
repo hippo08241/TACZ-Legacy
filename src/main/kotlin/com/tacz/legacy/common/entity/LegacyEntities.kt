@@ -495,7 +495,7 @@ internal class EntityKineticBullet : EntityThrowable, IEntityAdditionalSpawnData
             var endVec = Vec3d(posX + motionX, posY + motionY, posZ + motionZ)
 
             // 方块碰撞
-            val blockResult = world.rayTraceBlocks(startVec, endVec)
+            val blockResult = world.rayTraceBlocks(startVec, endVec, false, true, false)
             if (blockResult != null && blockResult.typeOfHit == RayTraceResult.Type.BLOCK) {
                 endVec = blockResult.hitVec
             }
