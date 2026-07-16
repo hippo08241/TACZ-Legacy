@@ -122,8 +122,23 @@ internal object TACZGunItemRenderer : TileEntityItemStackRenderer() {
         Minecraft.getMinecraft().textureManager.bindTexture(registeredTexture)
 
         GlStateManager.pushMatrix()
-        GlStateManager.translate(0.5f, 2.0f, 0.5f)
+        GlStateManager.translate(0.5f, 1.5f, 0.5f)
         GlStateManager.scale(-1f, -1f, 1f)
+
+        if (transformType == ItemCameraTransforms.TransformType.THIRD_PERSON_RIGHT_HAND) {
+            val handPath = (runtimeModel as? com.tacz.legacy.client.model.BedrockGunModel)?.thirdPersonHandOriginPath
+            com.tacz.legacy.TACZLegacy.logger.info("[DEBUG] runtimeModel type={}, handPath={}", runtimeModel?.javaClass?.simpleName, handPath?.map { it.name })
+            if (handPath != null) {
+                for (i in handPath.indices.reversed()) {
+                    handPath[i].inverseTranslateAndRotateAndScale()
+                }
+            }
+            GlStateManager.translate(0f, 1.3f, 0.3f)
+            val thirdPersonScale = display.transform?.scale?.thirdPerson
+            if (thirdPersonScale != null) {
+                GlStateManager.scale(thirdPersonScale.x(), thirdPersonScale.y(), thirdPersonScale.z())
+            }
+        }
 
         GlStateManager.enableLighting()
         GlStateManager.enableRescaleNormal()

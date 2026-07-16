@@ -30,17 +30,16 @@ public class TACZPerspectiveAwareBakedModel extends BakedModelWrapper<IBakedMode
     @Nonnull
     public Pair<? extends IBakedModel, Matrix4f> handlePerspective(@Nonnull ItemCameraTransforms.TransformType cameraTransformType) {
         currentTransformType = cameraTransformType;
-        // For item-presentation contexts (GUI, ground, fixed, head) the TEISRs render
-        // slot textures in a coordinate space that assumes no pre-applied display
-        // transforms.  Upstream TACZ 1.20 model JSONs have no/identity display
-        // sections so BEWLRs always start from a clean matrix.  Return null to
-        // neutralise the transforms from Legacy model JSONs for these contexts,
-        // while keeping hand-context matrices unchanged to avoid first-person side effects.
-        if (isItemPresentationContext(cameraTransformType)) {
+        if (isItemPresentationContext(cameraTransformType) || isThirdPerson(cameraTransformType)) {
             return Pair.of(this, null);
         }
         Pair<? extends IBakedModel, Matrix4f> result = originalModel.handlePerspective(cameraTransformType);
         return Pair.of(this, result.getRight());
+    }
+
+    public static boolean isThirdPerson(@Nonnull ItemCameraTransforms.TransformType type) {
+        return type == ItemCameraTransforms.TransformType.THIRD_PERSON_RIGHT_HAND
+            || type == ItemCameraTransforms.TransformType.THIRD_PERSON_LEFT_HAND;
     }
 
     /**

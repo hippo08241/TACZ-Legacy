@@ -130,7 +130,36 @@ public class BedrockPart {
         applyQuaternion(additionalQuaternion);
         GlStateManager.scale(xScale, yScale, zScale);
     }
+    public void inverseTranslateAndRotateAndScale() {
+        float invXScale = xScale != 0.0F ? 1.0F / xScale : 1.0F;
+        float invYScale = yScale != 0.0F ? 1.0F / yScale : 1.0F;
+        float invZScale = zScale != 0.0F ? 1.0F / zScale : 1.0F;
+        GlStateManager.scale(invXScale, invYScale, invZScale);
+        applyInverseQuaternion(additionalQuaternion);
+        if (this.xRot != 0.0F) {
+            GlStateManager.rotate((float) -Math.toDegrees(this.xRot), 1, 0, 0);
+        }
+        if (this.yRot != 0.0F) {
+            GlStateManager.rotate((float) -Math.toDegrees(this.yRot), 0, 1, 0);
+        }
+        if (this.zRot != 0.0F) {
+            GlStateManager.rotate((float) -Math.toDegrees(this.zRot), 0, 0, 1);
+        }
+        GlStateManager.translate(-(this.x / 16.0F), -(this.y / 16.0F), -(this.z / 16.0F));
+        GlStateManager.translate(-this.offsetX, -this.offsetY, -this.offsetZ);
+    }
 
+    private static void applyInverseQuaternion(Quaternionf q) {
+        if (q.x == 0 && q.y == 0 && q.z == 0 && q.w == 1) {
+            return;
+        }
+        Quaternionf inverse = new Quaternionf(q).conjugate();
+        Matrix4f mat = new Matrix4f().rotation(inverse);
+        MATRIX_BUFFER.clear();
+        mat.get(MATRIX_BUFFER);
+        MATRIX_BUFFER.rewind();
+        GL11.glMultMatrix(MATRIX_BUFFER);
+    }
     private static void applyQuaternion(Quaternionf q) {
         if (q.x == 0 && q.y == 0 && q.z == 0 && q.w == 1) {
             return;

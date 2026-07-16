@@ -64,6 +64,7 @@ import static com.tacz.legacy.client.model.GunModelConstant.SHELL_ORIGIN_NODE;
 import static com.tacz.legacy.client.model.GunModelConstant.SHELL_ORIGIN_NODE_PREFIX;
 import static com.tacz.legacy.client.model.GunModelConstant.SIGHT;
 import static com.tacz.legacy.client.model.GunModelConstant.SIGHT_FOLDED;
+import static com.tacz.legacy.client.model.GunModelConstant.THIRD_PERSON_HAND_ORIGIN_NODE;
 
 /**
  * Gun-specific bedrock runtime used by mounted attachment rendering.
@@ -91,6 +92,8 @@ public class BedrockGunModel extends BedrockAnimatedModel {
     private final MuzzleFlashRender muzzleFlashRender;
 
     @Nullable
+    private List<BedrockPart> thirdPersonHandOriginPath;
+    @Nullable
     private List<BedrockPart> ironSightPath;
     @Nullable
     private List<BedrockPart> scopePosPath;
@@ -114,6 +117,7 @@ public class BedrockGunModel extends BedrockAnimatedModel {
         this.muzzleFlashRender = new MuzzleFlashRender(this);
         this.magazineNode = resolveNode(MAG_NORMAL_NODE);
         this.additionalMagazineNode = resolveNode(MAG_ADDITIONAL_NODE);
+        this.thirdPersonHandOriginPath = getPath(modelMap.get(THIRD_PERSON_HAND_ORIGIN_NODE));
         this.idleSightPath = getPath(modelMap.get(IDLE_VIEW_NODE));
         this.ironSightPath = getPath(modelMap.get(IRON_VIEW_NODE));
         this.scopePosPath = getPath(modelMap.get(AttachmentType.SCOPE.getSerializedName() + ATTACHMENT_POS_SUFFIX));
@@ -488,6 +492,11 @@ public class BedrockGunModel extends BedrockAnimatedModel {
         if (rightHandRender != null) {
             rightHandRender.setGunTexture(activeGunTexture);
         }
+    }
+
+    @Nullable
+    public List<BedrockPart> getThirdPersonHandOriginPath() {
+        return thirdPersonHandOriginPath;
     }
 
     @Nullable
