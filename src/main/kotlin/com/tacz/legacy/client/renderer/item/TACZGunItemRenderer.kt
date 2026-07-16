@@ -127,7 +127,6 @@ internal object TACZGunItemRenderer : TileEntityItemStackRenderer() {
 
         if (transformType == ItemCameraTransforms.TransformType.THIRD_PERSON_RIGHT_HAND) {
             val handPath = (runtimeModel as? com.tacz.legacy.client.model.BedrockGunModel)?.thirdPersonHandOriginPath
-            com.tacz.legacy.TACZLegacy.logger.info("[DEBUG] runtimeModel type={}, handPath={}", runtimeModel?.javaClass?.simpleName, handPath?.map { it.name })
             if (handPath != null) {
                 for (i in handPath.indices.reversed()) {
                     handPath[i].inverseTranslateAndRotateAndScale()
