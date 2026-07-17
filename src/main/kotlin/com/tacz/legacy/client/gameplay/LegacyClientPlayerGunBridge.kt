@@ -31,6 +31,7 @@ import net.minecraft.client.Minecraft
 import net.minecraft.client.entity.EntityPlayerSP
 import net.minecraft.entity.EntityList
 import net.minecraft.item.ItemStack
+import net.minecraft.network.play.client.CPacketEntityAction
 import net.minecraft.util.EnumActionResult
 import net.minecraft.util.EnumHand
 import net.minecraft.util.math.RayTraceResult
@@ -337,8 +338,12 @@ internal object LegacyClientPlayerGunBridge {
         val isBurstAuto = fireMode == FireMode.BURST && LegacyRuntimeTooltipSupport.isContinuousBurst(gunId)
 
         if (shootDown) {
-            player.isSprinting = false
-            cancelReloadIfNeeded(stack, operator)
+            if (player.isSprinting) {
+                player.setSprinting(false)
+                Minecraft.getMinecraft().connection?.sendPacket(
+                    CPacketEntityAction(player, CPacketEntityAction.Action.STOP_SPRINTING),
+                )
+            }
             val shouldAttempt = fireMode == FireMode.AUTO || isBurstAuto || !lastShootSuccess
             if (shouldAttempt) {
                 val result = attemptShoot(player, operator)
