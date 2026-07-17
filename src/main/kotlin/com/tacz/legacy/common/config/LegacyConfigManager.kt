@@ -27,8 +27,9 @@ internal data class CommonConfigValues(
         "srparasites:sim_enderman",
         "srparasites:sim_endermanhead",
         "srparasites:mar_enderman",
-        "srparasites:fer_enderman"
-        ),
+        "srparasites:fer_enderman",
+        "mekanism:babyenderman"
+    ),
     var igniteBlock: Boolean = true,
     var igniteEntity: Boolean = true,
     var globalBulletSpeedModifier: Double = 2.0,
@@ -231,7 +232,15 @@ internal object LegacyConfigManager {
                 "The distance at which the explosion effect can be seen."
             )
             common.teleportDodgeEntityIds = cfg.getStringList(
-                "TeleportDodgeEntityIds", "ammo", arrayOf("minecraft:enderman"),
+                "TeleportDodgeEntityIds", "ammo",
+                arrayOf(
+                    "minecraft:enderman",
+                    "srparasites:sim_enderman",
+                    "srparasites:sim_endermanhead",
+                    "srparasites:mar_enderman",
+                    "srparasites:fer_enderman",
+                    "mekanism:babyenderman"
+                ),
                 "Entity IDs that dodge indirect damage. Bullets bypass this for listed entities."
             ).toList()
             common.passThroughBlocks = cfg.getStringList(
