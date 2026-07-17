@@ -35,25 +35,15 @@ internal object DefaultGunPackExporter {
             return ExportResult(exported = false, skipped = true, targetDirectory = targetDirectory, backupDirectory = null)
         }
 
-        val backupDirectory = if (targetDirectory.exists()) {
-            backupExistingDirectory(targetDirectory)
-        } else {
-            null
+        if (targetDirectory.exists()) {
+            deleteDirectory(targetDirectory.toPath())
         }
 
         targetDirectory.mkdirs()
         copyBundledPackTo(targetDirectory.toPath(), RESOURCE_ROOT, javaClass.classLoader)
         exportRegisteredResources(taczDirectory, overwrite)
         TACZGunPackRuntimeRegistry.reload(gameDirectory)
-        return ExportResult(exported = true, skipped = false, targetDirectory = targetDirectory, backupDirectory = backupDirectory)
-    }
-
-    private fun backupExistingDirectory(targetDirectory: File): File {
-        val backupRoot = File(requireNotNull(LegacyConfigManager.getModConfigDirectory()), "backup").apply { mkdirs() }
-        val backupDirectory = File(backupRoot, "${targetDirectory.name}-${System.currentTimeMillis()}")
-        copyDirectory(targetDirectory.toPath(), backupDirectory.toPath())
-        deleteDirectory(targetDirectory.toPath())
-        return backupDirectory
+        return ExportResult(exported = true, skipped = false, targetDirectory = targetDirectory, backupDirectory = null)
     }
 
     private fun exportRegisteredResources(rootDirectory: File, overwrite: Boolean): Unit {
@@ -63,7 +53,7 @@ internal object DefaultGunPackExporter {
                 return@forEach
             }
             if (targetDirectory.exists()) {
-                backupExistingDirectory(targetDirectory)
+                deleteDirectory(targetDirectory.toPath())
             }
             targetDirectory.mkdirs()
             runCatching {
