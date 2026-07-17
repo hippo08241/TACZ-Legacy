@@ -22,6 +22,13 @@ internal data class CommonConfigValues(
     var explosiveAmmoVisibleDistance: Int = 192,
     var passThroughBlocks: List<String> = emptyList(),
     var destroyGlass: Boolean = true,
+    var teleportDodgeEntityIds: List<String> = listOf(
+        "minecraft:enderman",
+        "srparasites:sim_enderman",
+        "srparasites:sim_endermanhead",
+        "srparasites:mar_enderman",
+        "srparasites:fer_enderman"
+        ),
     var igniteBlock: Boolean = true,
     var igniteEntity: Boolean = true,
     var globalBulletSpeedModifier: Double = 2.0,
@@ -223,6 +230,10 @@ internal object LegacyConfigManager {
                 "ExplosiveAmmoVisibleDistance", "ammo", 192, 0, Int.MAX_VALUE,
                 "The distance at which the explosion effect can be seen."
             )
+            common.teleportDodgeEntityIds = cfg.getStringList(
+                "TeleportDodgeEntityIds", "ammo", arrayOf("minecraft:enderman"),
+                "Entity IDs that dodge indirect damage. Bullets bypass this for listed entities."
+            ).toList()
             common.passThroughBlocks = cfg.getStringList(
                 "PassThroughBlocks", "ammo", emptyArray(),
                 "Those blocks that the ammo can pass through."

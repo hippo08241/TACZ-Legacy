@@ -21,6 +21,7 @@ import net.minecraft.nbt.NBTTagCompound
 import net.minecraft.nbt.NBTTagList
 import net.minecraft.init.Blocks
 import net.minecraft.util.DamageSource
+import net.minecraft.util.EntityDamageSource
 import net.minecraft.util.EntityDamageSourceIndirect
 import net.minecraft.util.ResourceLocation
 import net.minecraft.util.math.AxisAlignedBB
@@ -596,13 +597,13 @@ internal class EntityKineticBullet : EntityThrowable, IEntityAdditionalSpawnData
         }
         var applied = false
         if (damageSplit.first > 0.0f) {
-            applied = target.attackEntityFrom(createBulletDamageSource(ignoreArmor = false), damageSplit.first) || applied
+            applied = target.attackEntityFrom(createBulletDamageSource(ignoreArmor = false, target = target), damageSplit.first) || applied
         }
         if (damageSplit.second > 0.0f) {
             if (target is EntityLivingBase) {
                 target.hurtResistantTime = 0
             }
-            applied = target.attackEntityFrom(createBulletDamageSource(ignoreArmor = true), damageSplit.second) || applied
+            applied = target.attackEntityFrom(createBulletDamageSource(ignoreArmor = true, target = target), damageSplit.second) || applied
         }
         applyImpactKnockback(target)
         if (igniteEntity && !target.world.isRemote && LegacyConfigManager.common.igniteEntity) {
@@ -682,13 +683,31 @@ internal class EntityKineticBullet : EntityThrowable, IEntityAdditionalSpawnData
         )
     }
 
-    private fun createBulletDamageSource(ignoreArmor: Boolean): DamageSource {
+    private fun createBulletDamageSource(ignoreArmor: Boolean, target: Entity): DamageSource {
         val rawType = "tacz_bullet_${ammoId.namespace}_${ammoId.path}"
         val damageType = rawType.replace(Regex("[^a-zA-Z0-9_]"), "_")
-        val damageSource = EntityDamageSourceIndirect(damageType, this, thrower).setProjectile()
+
+        val damageSource = if (isTeleportDodgeProne(target)) {
+            EntityDamageSource(damageType, thrower)
+        } else {
+            EntityDamageSourceIndirect(damageType, this, thrower)
+        }.setProjectile()
+
         return if (ignoreArmor) damageSource.setDamageBypassesArmor() else damageSource
     }
 
+    private fun isTeleportDodgeProne(target: Entity): Boolean {
+        val className = target.javaClass.simpleName
+        return target is net.minecraft.entity.monster.EntityEnderman ||
+            className.contains("Enderman", ignoreCase = true)
+    }
+    /* 뭔가 문제가 있어서 주석 처리함. 위의 isTeleportDodgeProne() 로 대체함.
+    private fun isTeleportDodgeProne(target: Entity): Boolean {
+        val registryId = EntityList.getKey(target) ?: return false
+        val configuredIds = LegacyConfigManager.common.teleportDodgeEntityIds
+        return configuredIds.any { it.equals(registryId.toString(), ignoreCase = true) }
+    }
+    */
     private fun applyImpactKnockback(target: Entity) {
         if (knockback <= 0.0f) {
             return
