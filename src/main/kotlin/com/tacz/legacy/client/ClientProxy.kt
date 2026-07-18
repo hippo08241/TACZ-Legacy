@@ -14,6 +14,7 @@ import com.tacz.legacy.client.input.LegacyKeyBindings
 import com.tacz.legacy.client.renderer.block.GunSmithTableTileEntityRenderer
 import com.tacz.legacy.client.renderer.bloom.TACZBloomBridge
 import com.tacz.legacy.client.renderer.entity.RenderKineticBullet
+import com.tacz.legacy.client.renderer.item.TACZAmmoBoxItemRenderer
 import com.tacz.legacy.client.renderer.item.TACZAmmoItemRenderer
 import com.tacz.legacy.client.renderer.item.TACZAttachmentItemRenderer
 import com.tacz.legacy.client.renderer.item.TACZBlockItemRenderer
@@ -71,6 +72,7 @@ internal class ClientProxy : CommonProxy() {
         // Wire TEISR for gun items (requires "parent": "builtin/entity" in item model JSON)
         LegacyItems.MODERN_KINETIC_GUN.setTileEntityItemStackRenderer(TACZGunItemRenderer)
         LegacyItems.AMMO.setTileEntityItemStackRenderer(TACZAmmoItemRenderer)
+        LegacyItems.AMMO_BOX.setTileEntityItemStackRenderer(TACZAmmoBoxItemRenderer)
         LegacyItems.ATTACHMENT.setTileEntityItemStackRenderer(TACZAttachmentItemRenderer)
         LegacyItems.GUN_SMITH_TABLE.setTileEntityItemStackRenderer(TACZBlockItemRenderer)
         LegacyItems.WORKBENCH_A.setTileEntityItemStackRenderer(TACZBlockItemRenderer)
@@ -79,6 +81,7 @@ internal class ClientProxy : CommonProxy() {
 
         // World-space TESR for gun smith table / workbench blocks
         ClientRegistry.bindTileEntitySpecialRenderer(GunSmithTableTileEntity::class.java, GunSmithTableTileEntityRenderer())
+        ModelRegisterer.registerAmmoBoxPropertyOverride()
 
         // Load client-side assets (models, textures) from the already-loaded gun pack snapshot
         val snapshot = TACZGunPackRuntimeRegistry.getSnapshot()

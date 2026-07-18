@@ -181,9 +181,11 @@ dependencies {
     implementation(rfg.deobf("curse.maven:lumenized-1234162:6734060"))
     implementation(rfg.deobf("curse.maven:ctm-267602:2915363"))
     implementation(rfg.deobf("curse.maven:codechickenlib-242818:2779848"))
+    
+    compileOnly(rfg.deobf("curse.maven:mouse-tweaks-461660:5876158"))
 
     testImplementation("junit:junit:4.13.2")
-    
+
     if (use_assetmover.toBoolean()) {
         implementation("com.cleanroommc:assetmover:2.5")
     }

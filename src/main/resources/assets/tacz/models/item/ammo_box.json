@@ -1,4 +1,27 @@
 {
+  "parent": "tacz:item/ammo_box/iron_ammo_box_open",
+  "display": {
+    "gui": {
+      "rotation": [30, 225, 0],
+      "translation": [0, 0, 0],
+      "scale": [1.6, 1.6, 1.6]
+    },
+    "ground": {
+      "translation": [0, 2, 0],
+      "scale": [0.5, 0.5, 0.5]
+    },
+    "fixed": {
+      "scale": [0.5, 0.5, 0.5]
+    },
+    "thirdperson_righthand": {
+      "translation": [0, 2.5, 0],
+      "scale": [0.85, 0.85, 0.85]
+    },
+    "thirdperson_lefthand": {
+      "translation": [0, 2.5, 0],
+      "scale": [0.85, 0.85, 0.85]
+    }
+  },
   "overrides": [
     {
       "predicate": {
