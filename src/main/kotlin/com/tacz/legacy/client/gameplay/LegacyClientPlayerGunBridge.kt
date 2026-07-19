@@ -44,6 +44,8 @@ internal object LegacyClientPlayerGunBridge {
     private var lastShootKeyDown: Boolean = false
     private var lastSprinting: Boolean = false
 
+    private const val SPRINT_CANCEL_DEBOUNCE_TICKS = 3
+
     internal fun onClientTick(): Unit {
         val mc = Minecraft.getMinecraft()
         val player = mc.player ?: run {
@@ -120,9 +122,16 @@ internal object LegacyClientPlayerGunBridge {
         lastHeldGunStack = mainHand.copy()
     }
 
+    private var sprintTrueTicks = 0
+
     private fun processSprintReloadCancel(player: EntityPlayerSP, operator: IGunOperator): Unit {
         val sprinting = player.isSprinting
-        if (sprinting && !lastSprinting) {
+        if (sprinting) {
+            sprintTrueTicks++
+        } else {
+            sprintTrueTicks = 0
+        }
+        if (sprintTrueTicks == SPRINT_CANCEL_DEBOUNCE_TICKS) {
             cancelReloadIfNeeded(player.heldItemMainhand, operator)
         }
         lastSprinting = sprinting
