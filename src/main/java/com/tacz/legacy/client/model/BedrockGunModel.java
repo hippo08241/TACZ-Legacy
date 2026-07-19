@@ -43,6 +43,8 @@ import static com.tacz.legacy.client.model.GunModelConstant.ATTACHMENT_ADAPTER_N
 import static com.tacz.legacy.client.model.GunModelConstant.ATTACHMENT_POS_SUFFIX;
 import static com.tacz.legacy.client.model.GunModelConstant.CARRY;
 import static com.tacz.legacy.client.model.GunModelConstant.DEFAULT_ATTACHMENT_SUFFIX;
+import static com.tacz.legacy.client.model.GunModelConstant.FIXED_ORIGIN_NODE;
+import static com.tacz.legacy.client.model.GunModelConstant.GROUND_ORIGIN_NODE;
 import static com.tacz.legacy.client.model.GunModelConstant.HANDGUARD_DEFAULT_NODE;
 import static com.tacz.legacy.client.model.GunModelConstant.HANDGUARD_TACTICAL_NODE;
 import static com.tacz.legacy.client.model.GunModelConstant.IDLE_VIEW_NODE;
@@ -64,6 +66,7 @@ import static com.tacz.legacy.client.model.GunModelConstant.SHELL_ORIGIN_NODE;
 import static com.tacz.legacy.client.model.GunModelConstant.SHELL_ORIGIN_NODE_PREFIX;
 import static com.tacz.legacy.client.model.GunModelConstant.SIGHT;
 import static com.tacz.legacy.client.model.GunModelConstant.SIGHT_FOLDED;
+import static com.tacz.legacy.client.model.GunModelConstant.THIRD_PERSON_HAND_ORIGIN_NODE;
 
 /**
  * Gun-specific bedrock runtime used by mounted attachment rendering.
@@ -97,6 +100,12 @@ public class BedrockGunModel extends BedrockAnimatedModel {
     @Nullable
     private List<BedrockPart> muzzleFlashPosPath;
     @Nullable
+    private List<BedrockPart> fixedOriginPath;
+    @Nullable
+    private List<BedrockPart> groundOriginPath;
+    @Nullable
+    private List<BedrockPart> thirdPersonHandOriginPath;
+    @Nullable
     private List<BedrockPart> laserBeamPath;
     @Nullable
     private ResourceLocation activeGunTexture;
@@ -120,6 +129,9 @@ public class BedrockGunModel extends BedrockAnimatedModel {
         this.muzzleFlashPosPath = getPath(modelMap.get(MUZZLE_FLASH_ORIGIN_NODE));
         this.laserBeamPath = getPath(modelMap.get("laser_beam"));
 
+        this.fixedOriginPath = getPath(modelMap.get(FIXED_ORIGIN_NODE));
+        this.groundOriginPath = getPath(modelMap.get(GROUND_ORIGIN_NODE));
+        this.thirdPersonHandOriginPath = getPath(modelMap.get(THIRD_PERSON_HAND_ORIGIN_NODE));
         this.setFunctionalRenderer(LEFTHAND_POS_NODE, bedrockPart -> leftHandRender);
         this.setFunctionalRenderer(RIGHTHAND_POS_NODE, bedrockPart -> rightHandRender);
         this.setFunctionalRenderer(MUZZLE_FLASH_ORIGIN_NODE, bedrockPart -> muzzleFlashRender);
@@ -493,6 +505,21 @@ public class BedrockGunModel extends BedrockAnimatedModel {
     @Nullable
     public List<BedrockPart> getIronSightPath() {
         return ironSightPath;
+    }
+
+    @Nullable
+    public List<BedrockPart> getFixedOriginPath() {
+        return fixedOriginPath;
+    }
+
+    @Nullable
+    public List<BedrockPart> getGroundOriginPath() {
+        return groundOriginPath;
+    }
+
+    @Nullable
+    public List<BedrockPart> getThirdPersonHandOriginPath() {
+        return thirdPersonHandOriginPath;
     }
 
     @Nullable
