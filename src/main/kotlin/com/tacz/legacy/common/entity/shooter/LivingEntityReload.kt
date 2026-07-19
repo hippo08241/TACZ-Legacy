@@ -45,7 +45,7 @@ public class LivingEntityReload(
         val hasBulletInBarrel = iGun.hasBulletInBarrel(currentGunItem)
 
         // 满弹判定
-        val maxAmmo = gunData.ammoAmount
+        val maxAmmo = com.tacz.legacy.common.application.refit.LegacyGunRefitRuntime.computeAmmoCapacity(currentGunItem)
         val isBarrelFull = hasBulletInBarrel || gunData.boltType == BoltType.OPEN_BOLT
         if (currentAmmo >= maxAmmo && isBarrelFull) return
 

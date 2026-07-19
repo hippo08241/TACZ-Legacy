@@ -4,6 +4,7 @@ import com.tacz.legacy.api.DefaultAssets
 import com.tacz.legacy.api.event.GunFireEvent
 import com.tacz.legacy.api.item.IGun
 import com.tacz.legacy.api.item.gun.FireMode
+import com.tacz.legacy.common.application.refit.LegacyGunRefitRuntime
 import com.tacz.legacy.common.entity.EntityKineticBullet
 import com.tacz.legacy.common.item.ModernKineticGunItem
 import com.tacz.legacy.common.network.TACZNetworkHandler
@@ -225,13 +226,13 @@ internal class TACZGunScriptAPI {
 
     fun getNeededAmmoAmount(): Int {
         val gun = iGun ?: return 0
-        val data = gunData ?: return 0
-        return data.ammoAmount - gun.getCurrentAmmoCount(itemStack)
+        val maxAmmo = LegacyGunRefitRuntime.computeAmmoCapacity(itemStack)
+        return maxAmmo - gun.getCurrentAmmoCount(itemStack)
     }
 
     fun getAmmoAmount(): Int = iGun?.getCurrentAmmoCount(itemStack) ?: 0
 
-    fun getMaxAmmoCount(): Int = gunData?.ammoAmount ?: 0
+    fun getMaxAmmoCount(): Int = LegacyGunRefitRuntime.computeAmmoCapacity(itemStack)
 
     fun getMagExtentLevel(): Int = 0
 
@@ -245,8 +246,7 @@ internal class TACZGunScriptAPI {
     fun putAmmoInMagazine(amount: Int): Int {
         if (amount < 0) return 0
         val gun = iGun ?: return amount
-        val data = gunData ?: return amount
-        val maxAmmo = data.ammoAmount
+        val maxAmmo = LegacyGunRefitRuntime.computeAmmoCapacity(itemStack)
         val currentAmmo = gun.getCurrentAmmoCount(itemStack)
         val newAmmo = currentAmmo + amount
         if (maxAmmo < newAmmo) {
