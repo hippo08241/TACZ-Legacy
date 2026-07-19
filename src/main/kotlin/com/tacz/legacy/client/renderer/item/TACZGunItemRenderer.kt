@@ -8,6 +8,8 @@ import com.tacz.legacy.client.model.TACZPerspectiveAwareBakedModel
 import com.tacz.legacy.client.model.bedrock.BedrockModel
 import com.tacz.legacy.client.model.bedrock.BedrockPart
 import com.tacz.legacy.client.model.functional.BeamRenderer
+import com.tacz.legacy.client.model.functional.MuzzleFlashRender
+import com.tacz.legacy.client.model.functional.ShellRender
 import com.tacz.legacy.client.renderer.bloom.TACZBloomBridge
 import com.tacz.legacy.client.resource.TACZClientAssetManager
 import com.tacz.legacy.client.resource.GunDisplayInstance
@@ -153,6 +155,8 @@ internal object TACZGunItemRenderer : TileEntityItemStackRenderer() {
         displayInstance?.setActiveGunTexture(registeredTexture)
         if (runtimeModel != null) {
             runtimeModel.renderHand = false
+            ShellRender.isSelf = true
+            MuzzleFlashRender.isSelf = true
             val previousBeamContext = BeamRenderer.pushRenderContext(beamRenderContext)
             try {
                 runtimeModel.render(stack)

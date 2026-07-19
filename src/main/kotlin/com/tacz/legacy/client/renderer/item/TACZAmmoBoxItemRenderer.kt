@@ -62,6 +62,8 @@ internal object TACZAmmoBoxItemRenderer : TileEntityItemStackRenderer() {
             Minecraft.getMinecraft().textureManager.bindTexture(FALLBACK_TEXTURE)
         }
 
+        GlStateManager.color(1.0f, 1.0f, 1.0f, 1.0f)
+        
         GlStateManager.disableBlend()
         GlStateManager.disableRescaleNormal()
         GlStateManager.enableCull()
