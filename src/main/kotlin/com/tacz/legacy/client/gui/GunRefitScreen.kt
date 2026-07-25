@@ -1425,7 +1425,7 @@ internal class GunRefitScreen : GuiScreen() {
 			GlStateManager.color(1f, 1f, 1f, 1f)
 			mc.textureManager.bindTexture(TACZ_REFIT_UNLOAD_TEXTURE)
 			val u = if (hovered) 0f else 80f
-			drawModalRectWithCustomSizedTexture(x, y, u, 0f, width, height, 160f, 80f)
+			drawScaledCustomSizeModalRect(x, y, u, 0f, 80, 80, width, height, 160f, 80f)
 		}
 
 		override fun contains(mouseX: Int, mouseY: Int): Boolean = mouseX >= x && mouseY >= y && mouseX < x + width && mouseY < y + height

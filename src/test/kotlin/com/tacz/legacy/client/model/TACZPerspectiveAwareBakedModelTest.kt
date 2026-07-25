@@ -1,5 +1,6 @@
 package com.tacz.legacy.client.model
 
+import net.minecraft.client.renderer.block.model.ItemCameraTransforms
 import net.minecraft.client.renderer.block.model.ItemCameraTransforms.TransformType
 import org.junit.Assert.*
 import org.junit.Test
@@ -12,8 +13,8 @@ class TACZPerspectiveAwareBakedModelTest {
     }
 
     @Test
-    fun `GROUND is item presentation context`() {
-        assertTrue(TACZPerspectiveAwareBakedModel.isItemPresentationContext(TransformType.GROUND))
+    fun `GROUND is no longer an item presentation context`() {
+        assertFalse(TACZPerspectiveAwareBakedModel.isItemPresentationContext(ItemCameraTransforms.TransformType.GROUND))
     }
 
     @Test
