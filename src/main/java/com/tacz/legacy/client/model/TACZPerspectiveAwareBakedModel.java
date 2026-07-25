@@ -59,7 +59,6 @@ public class TACZPerspectiveAwareBakedModel extends BakedModelWrapper<IBakedMode
     public static boolean isItemPresentationContext(@Nonnull ItemCameraTransforms.TransformType type) {
         switch (type) {
             case GUI:
-            case GROUND:
             case FIXED:
             case HEAD:
             case NONE:
