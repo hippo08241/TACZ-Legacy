@@ -238,7 +238,7 @@ internal object LegacyGunSmithingRuntime {
                 return ores.map(ItemStack::copy)
             }
         }
-        return when (tagId) {
+        val hardcoded = when (tagId) {
             "forge:glass" -> listOf(
                 ItemStack(Item.getItemFromBlock(Blocks.GLASS)),
                 ItemStack(Item.getItemFromBlock(Blocks.STAINED_GLASS), 1, OreDictionary.WILDCARD_VALUE),
@@ -258,6 +258,20 @@ internal object LegacyGunSmithingRuntime {
             "forge:ingots/iron" -> listOf(ItemStack(Items.IRON_INGOT))
             "forge:ingots/gold" -> listOf(ItemStack(Items.GOLD_INGOT))
             else -> emptyList()
+        }
+        if (hardcoded.isNotEmpty()) {
+            return hardcoded
+        }
+        materialFallback(tagId, oreName)?.let { return listOf(it) }
+        return emptyList()
+    }
+
+    private fun materialFallback(tagId: String, oreName: String?): ItemStack? {
+        val key = (oreName ?: tagId).lowercase(Locale.ROOT)
+        return when {
+            key.contains("netherite") -> ItemStack(Items.SKULL, 1, 1) // 위더 스켈레톤 머리
+            key.contains("copper") -> ItemStack(Item.getItemFromBlock(Blocks.REDSTONE_BLOCK))
+            else -> null
         }
     }
 
