@@ -197,7 +197,7 @@ internal class GunSmithTableScreen(
                 selectedType = tab.id
                 indexPage = 0
                 selectedRecipe = null
-                refreshRecipeState(preserveSelection = false)
+                refreshRecipeState(preserveSelection = true)
                 rebuildWidgets()
             }
             button.id in BUTTON_RESULT_BASE until BUTTON_PACK_BASE -> {
@@ -757,7 +757,15 @@ internal class GunSmithTableScreen(
             mc.textureManager.bindTexture(TEXTURE)
             val vOffset = if (hovered) 204 + height else 204
             val uOffset = if (selected) 0 else 26
+            GlStateManager.enableBlend()
+            GlStateManager.tryBlendFuncSeparate(
+                GlStateManager.SourceFactor.SRC_ALPHA,
+                GlStateManager.DestFactor.ONE_MINUS_SRC_ALPHA,
+                GlStateManager.SourceFactor.ONE,
+                GlStateManager.DestFactor.ZERO,
+            )
             drawTexturedModalRect(x, y, uOffset, vOffset, width, height)
+            GlStateManager.disableBlend()
             RenderHelper.enableGUIStandardItemLighting()
             itemRender.renderItemAndEffectIntoGUI(tab.icon, x + 4, y + 5)
             RenderHelper.disableStandardItemLighting()
