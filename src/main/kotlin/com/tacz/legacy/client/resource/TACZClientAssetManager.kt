@@ -807,6 +807,9 @@ internal object TACZClientAssetManager {
         globals.load(org.luaj.vm2.lib.StringLib())
         globals.load(JseMathLib())
         LuaC.install(globals)
+        // 建立沙盒：枪包脚本只能通过 require 引用其它枪包脚本，不允许读取/执行本地文件
+        globals.set("dofile", LuaValue.NIL)
+        globals.set("loadfile", LuaValue.NIL)
         return globals
     }
 

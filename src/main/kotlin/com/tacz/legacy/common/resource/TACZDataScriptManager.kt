@@ -51,6 +51,9 @@ internal object TACZDataScriptManager {
         g.load(JseMathLib())
         LoadState.install(g)
         LuaC.install(g)
+        // 建立沙盒：枪包脚本只能通过 require 引用其它枪包脚本，不允许读取/执行本地文件
+        g.set("dofile", LuaValue.NIL)
+        g.set("loadfile", LuaValue.NIL)
 
         // 注入全局常量：ReloadState.StateType 枚举
         for (stateType in ReloadState.StateType.entries) {
