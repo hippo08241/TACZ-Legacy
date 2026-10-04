@@ -42,7 +42,7 @@ import net.minecraftforge.registries.IForgeRegistry
 import java.util.Random
 
 internal object LegacyBlocks {
-    // 与枪包 index 中的约定一致：workbench_a = 1x1x1，workbench_b / gun_smith_table = 2x1x1，workbench_c = 1x2x1
+    // 占用范围见 WorkbenchLayout
     internal val GUN_SMITH_TABLE: LegacyGunSmithTableBlock = LegacyGunSmithTableBlock("gun_smith_table", WorkbenchLayout.WIDE)
     internal val WORKBENCH_A: LegacyGunSmithTableBlock = LegacyGunSmithTableBlock("workbench_a", WorkbenchLayout.SINGLE)
     internal val WORKBENCH_B: LegacyGunSmithTableBlock = LegacyGunSmithTableBlock("workbench_b", WorkbenchLayout.WIDE)
@@ -82,20 +82,29 @@ internal abstract class LegacyBaseBlock(path: String, material: Material, soundT
     override fun isFullCube(state: IBlockState): Boolean = false
 }
 
-/** 工作台占用的方块形状（与模型尺寸一致） */
-internal enum class WorkbenchLayout {
-    /** 1x1x1 */
-    SINGLE,
-    /** 2x1x1：主方块 + 侧面的附属方块 */
-    WIDE,
-    /** 1x2x1：主方块 + 上方的附属方块 */
-    TALL,
+/**
+ * 工作台占用的方块范围（宽 x 高，宽度沿 facing.rotateY() 方向延伸）。
+ * 每一格都是普通的完整方块，碰撞箱与破坏判定与普通方块相同，只是若干方块组合成一个整体。
+ * 尺寸按默认枪包模型取整：gun_smith_table 的背板/货架高 2 格。
+ */
+internal enum class WorkbenchLayout(internal val width: Int, internal val height: Int) {
+    /** workbench_a：1x1 */
+    SINGLE(1, 1),
+    /** gun_smith_table / workbench_b：宽 2、高 2 */
+    WIDE(2, 2),
+    /** workbench_c：宽 1、高 2 */
+    TALL(1, 2),
+    ;
+
+    internal val parts: List<WorkbenchPart> = WorkbenchPart.values().filter { it.dx < width && it.dy < height }
 }
 
-/** 多方块工作台的部位：主方块持有 TileEntity，附属方块只负责碰撞与交互 */
-internal enum class WorkbenchPart(private val serializedName: String) : IStringSerializable {
-    MAIN("main"),
-    EXTENSION("extension"),
+/** 多方块工作台的部位：主方块持有 TileEntity，其余部位只负责碰撞与交互 */
+internal enum class WorkbenchPart(private val serializedName: String, internal val dx: Int, internal val dy: Int) : IStringSerializable {
+    MAIN("main", 0, 0),
+    SIDE("side", 1, 0),
+    TOP("top", 0, 1),
+    TOP_SIDE("top_side", 1, 1),
     ;
 
     override fun getName(): String = serializedName
@@ -115,10 +124,10 @@ internal class LegacyGunSmithTableBlock(path: String, internal val layout: Workb
     override fun getStateFromMeta(meta: Int): IBlockState =
         defaultState
             .withProperty(FACING, EnumFacing.byHorizontalIndex(meta and 3))
-            .withProperty(PART, if (meta and 4 != 0) WorkbenchPart.EXTENSION else WorkbenchPart.MAIN)
+            .withProperty(PART, WorkbenchPart.values()[(meta shr 2) and 3])
 
     override fun getMetaFromState(state: IBlockState): Int =
-        state.getValue(FACING).horizontalIndex or (if (state.getValue(PART) == WorkbenchPart.EXTENSION) 4 else 0)
+        state.getValue(FACING).horizontalIndex or (state.getValue(PART).ordinal shl 2)
 
     override fun withRotation(state: IBlockState, rot: Rotation): IBlockState =
         state.withProperty(FACING, rot.rotate(state.getValue(FACING)))
@@ -140,62 +149,62 @@ internal class LegacyGunSmithTableBlock(path: String, internal val layout: Workb
 
     // ---- 多方块结构 ----
 
-    /**
-     * 附属方块相对主方块的方向；单方块工作台返回 null。
-     * 宽工作台的模型在渲染坐标中向 facing.rotateY() 一侧延伸（已用游戏内俯视截图确认）。
-     */
-    internal fun extensionDirection(facing: EnumFacing): EnumFacing? = when (layout) {
-        WorkbenchLayout.SINGLE -> null
-        WorkbenchLayout.WIDE -> facing.rotateY()
-        WorkbenchLayout.TALL -> EnumFacing.UP
-    }
+    /** 宽度方向：模型在渲染坐标中向 facing.rotateY() 一侧延伸（已用游戏内俯视截图确认） */
+    private fun sideDirection(facing: EnumFacing): EnumFacing = facing.rotateY()
+
+    /** 主方块坐标 + 部位 → 该部位的坐标 */
+    internal fun partPos(mainPos: BlockPos, facing: EnumFacing, part: WorkbenchPart): BlockPos =
+        mainPos.offset(sideDirection(facing), part.dx).up(part.dy)
+
+    /** 结构中所有部位的坐标（含主方块） */
+    internal fun structurePositions(mainPos: BlockPos, facing: EnumFacing): List<BlockPos> =
+        layout.parts.map { partPos(mainPos, facing, it) }
 
     /** 由任意部位的坐标求主方块坐标 */
     internal fun mainPos(pos: BlockPos, state: IBlockState): BlockPos {
-        if (state.getValue(PART) == WorkbenchPart.MAIN) {
-            return pos
-        }
-        val direction = extensionDirection(state.getValue(FACING)) ?: return pos
-        return pos.offset(direction.opposite)
+        val part = state.getValue(PART)
+        return pos.offset(sideDirection(state.getValue(FACING)), -part.dx).down(part.dy)
     }
 
-    /** 与该部位配对的另一部位坐标；单方块工作台返回 null */
-    private fun partnerPos(pos: BlockPos, state: IBlockState): BlockPos? {
-        val direction = extensionDirection(state.getValue(FACING)) ?: return null
-        return if (state.getValue(PART) == WorkbenchPart.MAIN) pos.offset(direction) else pos.offset(direction.opposite)
-    }
-
-    private fun isPartner(world: IBlockAccess, pos: BlockPos, state: IBlockState): Boolean {
-        val partner = partnerPos(pos, state) ?: return true
-        val partnerState = world.getBlockState(partner)
-        return partnerState.block === this &&
-            partnerState.getValue(PART) != state.getValue(PART) &&
-            partnerState.getValue(FACING) == state.getValue(FACING)
-    }
-
-    /** 放置前检查附属方块位置是否可用（由物品调用） */
-    internal fun canPlaceExtension(world: World, mainPos: BlockPos, facing: EnumFacing): Boolean {
-        val direction = extensionDirection(facing) ?: return true
-        val extensionPos = mainPos.offset(direction)
-        if (extensionPos.y >= world.height) {
+    /** 结构是否完整：每个部位都在应在的位置上，且朝向一致 */
+    private fun isStructureIntact(world: IBlockAccess, pos: BlockPos, state: IBlockState): Boolean {
+        if (state.getValue(PART) !in layout.parts) {
             return false
         }
-        val existing = world.getBlockState(extensionPos)
-        return existing.block.isReplaceable(world, extensionPos)
+        val facing = state.getValue(FACING)
+        val main = mainPos(pos, state)
+        return layout.parts.all { part ->
+            val other = world.getBlockState(partPos(main, facing, part))
+            other.block === this && other.getValue(FACING) == facing && other.getValue(PART) == part
+        }
     }
+
+    /** 放置前检查其余部位的位置是否都可用（由物品调用） */
+    internal fun canPlaceStructure(world: World, mainPos: BlockPos, facing: EnumFacing): Boolean =
+        layout.parts.filter { it != WorkbenchPart.MAIN }.all { part ->
+            val target = partPos(mainPos, facing, part)
+            target.y < world.height && world.getBlockState(target).block.isReplaceable(world, target)
+        }
 
     override fun onBlockPlacedBy(world: World, pos: BlockPos, state: IBlockState, placer: EntityLivingBase, stack: ItemStack) {
         super.onBlockPlacedBy(world, pos, state, placer, stack)
         if (state.getValue(PART) != WorkbenchPart.MAIN) {
             return
         }
-        val direction = extensionDirection(state.getValue(FACING)) ?: return
-        world.setBlockState(pos.offset(direction), state.withProperty(PART, WorkbenchPart.EXTENSION), 3)
+        val facing = state.getValue(FACING)
+        val others = layout.parts.filter { it != WorkbenchPart.MAIN }
+        // 先不触发邻居更新地放好所有部位：否则结构尚未完整时 neighborChanged 会把已放置的部位判定为残缺并移除
+        for (part in others) {
+            world.setBlockState(partPos(pos, facing, part), state.withProperty(PART, part), 2)
+        }
+        for (part in others) {
+            world.notifyNeighborsOfStateChange(partPos(pos, facing, part), this, false)
+        }
     }
 
-    /** 与原版床相同：另一部位消失时自身也随之移除；只有主方块会掉落物品 */
+    /** 与原版床相同：任一部位消失时其余部位也随之移除；只有主方块会掉落物品 */
     override fun neighborChanged(state: IBlockState, worldIn: World, pos: BlockPos, blockIn: net.minecraft.block.Block, fromPos: BlockPos) {
-        if (isPartner(worldIn, pos, state)) {
+        if (isStructureIntact(worldIn, pos, state)) {
             return
         }
         if (state.getValue(PART) == WorkbenchPart.MAIN) {
@@ -207,8 +216,8 @@ internal class LegacyGunSmithTableBlock(path: String, internal val layout: Workb
     }
 
     override fun onBlockHarvested(worldIn: World, pos: BlockPos, state: IBlockState, player: EntityPlayer) {
-        // 创造模式拆附属方块时，静默移除主方块，避免触发主方块的掉落
-        if (player.capabilities.isCreativeMode && state.getValue(PART) == WorkbenchPart.EXTENSION) {
+        // 创造模式拆非主方块部位时，静默移除主方块，避免触发主方块的掉落
+        if (player.capabilities.isCreativeMode && state.getValue(PART) != WorkbenchPart.MAIN) {
             val main = mainPos(pos, state)
             if (worldIn.getBlockState(main).block === this) {
                 worldIn.setBlockToAir(main)
@@ -218,7 +227,7 @@ internal class LegacyGunSmithTableBlock(path: String, internal val layout: Workb
     }
 
     override fun getPushReaction(state: IBlockState): net.minecraft.block.material.EnumPushReaction =
-        if (layout == WorkbenchLayout.SINGLE) super.getPushReaction(state) else net.minecraft.block.material.EnumPushReaction.BLOCK
+        if (layout.parts.size == 1) super.getPushReaction(state) else net.minecraft.block.material.EnumPushReaction.BLOCK
 
     override fun hasTileEntity(state: IBlockState): Boolean = state.getValue(PART) == WorkbenchPart.MAIN
 
@@ -243,7 +252,7 @@ internal class LegacyGunSmithTableBlock(path: String, internal val layout: Workb
         if (worldIn.isRemote) {
             return true
         }
-        // 点击附属方块时打开主方块的界面
+        // 点击任意部位时打开主方块的界面
         val main = mainPos(pos, state)
         if (worldIn.getTileEntity(main) !is GunSmithTableTileEntity) {
             return true
@@ -255,7 +264,7 @@ internal class LegacyGunSmithTableBlock(path: String, internal val layout: Workb
 
     /**
      * 掉落物需要携带 TileEntity 中的 BlockId，否则枪包工作台（如配件工作台）被破坏后
-     * 会变回没有 BlockId 的默认物品。附属方块不掉落（由主方块负责）。
+     * 会变回没有 BlockId 的默认物品。其余部位不掉落（由主方块负责）。
      */
     override fun getDrops(drops: NonNullList<ItemStack>, world: IBlockAccess, pos: BlockPos, state: IBlockState, fortune: Int) {
         if (state.getValue(PART) != WorkbenchPart.MAIN) {

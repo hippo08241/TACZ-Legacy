@@ -58,6 +58,10 @@ internal class GunSmithTableTileEntity : TileEntity() {
         return tag
     }
 
+    /** 模型最大占 2x2 格且可向任一水平方向延伸；默认的 1 格渲染范围会让模型在主方块出屏时被提前剔除 */
+    override fun getRenderBoundingBox(): net.minecraft.util.math.AxisAlignedBB =
+        net.minecraft.util.math.AxisAlignedBB(pos.add(-1, 0, -1), pos.add(2, 2, 2))
+
     override fun getUpdateTag(): NBTTagCompound = writeToNBT(NBTTagCompound())
 
     override fun getUpdatePacket(): net.minecraft.network.play.server.SPacketUpdateTileEntity =
