@@ -767,7 +767,10 @@ internal object FocusedSmokeClientHooks {
             step = Step.FAILED
             return
         }
-        if (FocusedSmokeRuntime.regularProjectileObserved && FocusedSmokeRuntime.hasObservedExpectedRegularFireCount()) {
+        if (FocusedSmokeRuntime.regularProjectileObserved &&
+            FocusedSmokeRuntime.hasObservedExpectedRegularFireCount() &&
+            FocusedSmokeRuntime.hitTargetSatisfied()
+        ) {
             if (plan.explosiveGunId == null) {
                 finalizeRun()
             } else {
@@ -867,7 +870,8 @@ internal object FocusedSmokeClientHooks {
         val animationReady = FocusedSmokeRuntime.animationObserved
         val projectileReady = FocusedSmokeRuntime.regularProjectileObserved
         val explosionReady = plan?.explosiveGunId == null || FocusedSmokeRuntime.explosionObserved
-        if (animationReady && projectileReady && explosionReady) {
+        val hitReady = FocusedSmokeRuntime.hitTargetSatisfied()
+        if (animationReady && projectileReady && explosionReady && hitReady) {
             step = Step.COMPLETE
             return
         }
@@ -875,6 +879,7 @@ internal object FocusedSmokeClientHooks {
             !animationReady -> "animation_missing"
             !projectileReady -> "regular_projectile_missing"
             !explosionReady -> "explosion_missing"
+            !hitReady -> "hit_target_not_damaged"
             else -> "focused_smoke_incomplete"
         }
         FocusedSmokeRuntime.markFailure(reason)

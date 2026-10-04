@@ -4,6 +4,8 @@ import com.google.gson.JsonElement
 import com.google.gson.JsonObject
 import com.tacz.legacy.TACZLegacy
 import com.tacz.legacy.api.DefaultAssets
+import com.tacz.legacy.api.event.EntityHurtByGunEvent
+import com.tacz.legacy.api.event.EntityKillByGunEvent
 import com.tacz.legacy.api.event.GunFireEvent
 import com.tacz.legacy.api.event.GunShootEvent
 import com.tacz.legacy.api.item.IAttachment
@@ -30,6 +32,7 @@ import net.minecraftforge.event.entity.EntityJoinWorldEvent
 import net.minecraftforge.event.world.ExplosionEvent
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent
 import net.minecraftforge.fml.common.gameevent.PlayerEvent
+import net.minecraftforge.fml.relauncher.Side
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
@@ -292,6 +295,15 @@ internal object FocusedSmokeRuntime {
     internal var regularProjectileObserved: Boolean = false
         private set
 
+    /** 启用命中目标时，目标是否真的受到了枪械伤害（服务端事件） */
+    @Volatile
+    internal var hitTargetDamaged: Boolean = false
+    @Volatile
+    private var hitTargetEntityId: Int = -1
+
+    /** 未启用命中目标时恒为 true；启用时要求目标确实受到伤害 */
+    internal fun hitTargetSatisfied(): Boolean = !hitFeedbackTargetEnabled || hitTargetDamaged
+
     @Volatile
     internal var tracerFrameObserved: Boolean = false
         private set
@@ -440,6 +452,8 @@ internal object FocusedSmokeRuntime {
         serverGearReady = false
         animationObserved = false
         regularProjectileObserved = false
+        hitTargetDamaged = false
+        hitTargetEntityId = -1
         tracerFrameObserved = false
         regularGunFireCount = 0
         audioPlaybackObserved = false
@@ -618,7 +632,7 @@ internal object FocusedSmokeRuntime {
             return
         }
         val plan = plannedScenario ?: return
-        if (!animationObserved || !regularProjectileObserved) {
+        if (!animationObserved || !regularProjectileObserved || !hitTargetSatisfied()) {
             return
         }
         if (requireTracerFrameEnabled && !tracerFrameObserved) {
@@ -772,6 +786,7 @@ internal object FocusedSmokeRuntime {
             health = desiredHealth
         }
         world.spawnEntity(target)
+        hitTargetEntityId = target.entityId
         logOnce(
             "hit-feedback-target",
             "HIT_FEEDBACK_TARGET_READY entityId=${target.entityId} type=${target.javaClass.simpleName} gun=$regularGunId health=${"%.2f".format(target.health)} pos=${"%.2f".format(target.posX)},${"%.2f".format(target.posY)},${"%.2f".format(target.posZ)}",
@@ -780,6 +795,25 @@ internal object FocusedSmokeRuntime {
 
     private fun parseFireMode(rawValue: String): FireMode =
         runCatching { FireMode.valueOf(rawValue.uppercase()) }.getOrDefault(FireMode.UNKNOWN)
+
+    @SubscribeEvent
+    fun onEntityHurtByGun(event: EntityHurtByGunEvent.Post) {
+        onHitTargetDamaged(event.logicalSide, event.hurtEntity?.entityId, killed = false)
+    }
+
+    @SubscribeEvent
+    fun onEntityKillByGun(event: EntityKillByGunEvent) {
+        onHitTargetDamaged(event.logicalSide, event.killedEntity?.entityId, killed = true)
+    }
+
+    private fun onHitTargetDamaged(side: Side, entityId: Int?, killed: Boolean) {
+        if (!enabled || side != Side.SERVER || entityId == null || entityId != hitTargetEntityId) {
+            return
+        }
+        hitTargetDamaged = true
+        logOnce("hit-target-damaged", "HIT_TARGET_DAMAGED entityId=$entityId killed=$killed")
+        maybeLogPass()
+    }
 
     @SubscribeEvent
     fun onPlayerLoggedIn(event: PlayerEvent.PlayerLoggedInEvent) {
