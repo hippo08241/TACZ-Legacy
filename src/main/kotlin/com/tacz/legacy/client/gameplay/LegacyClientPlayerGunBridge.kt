@@ -167,16 +167,37 @@ internal object LegacyClientPlayerGunBridge {
             if (iGun.useInventoryAmmo(stack)) {
                 continue
             }
-            val before = operator.getSynReloadState().stateType
-            operator.reload()
-            if (before != operator.getSynReloadState().stateType) {
-                TACZNetworkHandler.sendToServer(ClientMessagePlayerReload())
-                LegacyClientGunAnimationDriver.triggerIfInitialized(stack, GunAnimationConstant.INPUT_RELOAD)
-                val display = LegacyClientGunAnimationDriver.resolveDisplayInstance(stack)
-                val noAmmo = iGun.getCurrentAmmoCount(stack) <= 0
-                TACZClientGunSoundCoordinator.playReloadSound(player, display, noAmmo)
-            }
+            requestReload(player, operator, stack, iGun)
         }
+    }
+
+    /** 本地发起换弹；状态确实发生变化时才通知服务端并播放动画与音效。 */
+    private fun requestReload(player: EntityPlayerSP, operator: IGunOperator, stack: ItemStack, iGun: IGun): Unit {
+        val noAmmo = iGun.getCurrentAmmoCount(stack) <= 0
+        val before = operator.getSynReloadState().stateType
+        operator.reload()
+        if (before == operator.getSynReloadState().stateType) {
+            return
+        }
+        TACZNetworkHandler.sendToServer(ClientMessagePlayerReload())
+        LegacyClientGunAnimationDriver.triggerIfInitialized(stack, GunAnimationConstant.INPUT_RELOAD)
+        val display = LegacyClientGunAnimationDriver.resolveDisplayInstance(stack)
+        TACZClientGunSoundCoordinator.playReloadSound(player, display, noAmmo)
+    }
+
+    /** 本地发起拉栓；真正进入拉栓状态时才通知服务端并播放动画与音效。 */
+    private fun requestBolt(player: EntityPlayerSP, operator: IGunOperator, stack: ItemStack): Unit {
+        if (operator.getSynIsBolting()) {
+            return
+        }
+        operator.bolt()
+        if (!operator.getSynIsBolting()) {
+            return
+        }
+        TACZNetworkHandler.sendToServer(ClientMessagePlayerBolt())
+        LegacyClientGunAnimationDriver.triggerIfInitialized(stack, GunAnimationConstant.INPUT_BOLT)
+        val display = LegacyClientGunAnimationDriver.resolveDisplayInstance(stack)
+        TACZClientGunSoundCoordinator.playBoltSound(player, display)
     }
 
     private fun processFireSelectInput(player: EntityPlayerSP, operator: IGunOperator): Unit {
@@ -318,14 +339,7 @@ internal object LegacyClientPlayerGunBridge {
             if (operator.getSynReloadState().stateType.isReloading()) return
             if (operator.getSynDrawCoolDown() != 0L) return
 
-            // 触发拉拴
-            operator.bolt()
-            if (data.isBolting) {
-                TACZNetworkHandler.sendToServer(ClientMessagePlayerBolt())
-                LegacyClientGunAnimationDriver.triggerIfInitialized(stack, GunAnimationConstant.INPUT_BOLT)
-                val display = LegacyClientGunAnimationDriver.resolveDisplayInstance(stack)
-                TACZClientGunSoundCoordinator.playBoltSound(player, display)
-            }
+            requestBolt(player, operator, stack)
         }
 
         // 对于客户端来说，膛内弹药被填入的状态同步到客户端的瞬间，bolt 过程才算完全结束
@@ -357,15 +371,8 @@ internal object LegacyClientPlayerGunBridge {
             if (shouldAttempt) {
                 val result = attemptShoot(player, operator)
                 lastShootSuccess = result == ShootResult.SUCCESS
-                if (result == ShootResult.NEED_BOLT && !operator.getSynIsBolting()) {
-                    val before = operator.getSynIsBolting()
-                    operator.bolt()
-                    if (!before && operator.getSynIsBolting()) {
-                        TACZNetworkHandler.sendToServer(ClientMessagePlayerBolt())
-                        LegacyClientGunAnimationDriver.triggerIfInitialized(stack, GunAnimationConstant.INPUT_BOLT)
-                        val display = LegacyClientGunAnimationDriver.resolveDisplayInstance(stack)
-                        TACZClientGunSoundCoordinator.playBoltSound(player, display)
-                    }
+                if (result == ShootResult.NEED_BOLT) {
+                    requestBolt(player, operator, stack)
                 } else if (result == ShootResult.UNKNOWN_FAIL && !lastShootKeyDown && fireMode == FireMode.UNKNOWN) {
                     player.sendMessage(TextComponentTranslation("message.tacz.fire_select.fail"))
                 }
@@ -405,12 +412,8 @@ internal object LegacyClientPlayerGunBridge {
         if (ammoCount > 0) {
             return
         }
-        val before = operator.getSynReloadState().stateType
-        operator.reload()
-        if (before != operator.getSynReloadState().stateType) {
-            TACZNetworkHandler.sendToServer(ClientMessagePlayerReload())
-            LegacyClientGunAnimationDriver.triggerIfInitialized(stack, GunAnimationConstant.INPUT_RELOAD)
-        }
+        // 与手动换弹走同一路径（原实现自动换弹时不播放换弹音效）
+        requestReload(player, operator, stack, iGun)
     }
 
     private fun attemptShoot(player: EntityPlayerSP, operator: IGunOperator): ShootResult {
