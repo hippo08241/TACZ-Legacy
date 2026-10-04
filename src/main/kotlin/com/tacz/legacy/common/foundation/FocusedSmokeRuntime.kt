@@ -444,18 +444,18 @@ internal object FocusedSmokeRuntime {
     private var craftCompleted: Boolean = false
 
     @Volatile
-    private var craftExtensionPos: net.minecraft.util.math.BlockPos? = null
+    private var craftStructurePositions: List<net.minecraft.util.math.BlockPos> = emptyList()
 
     /**
-     * 制作完成后在服务端线程验证多方块工作台的破坏：以生存模式挖掉附属方块，
-     * 主方块应随之消失，并且只掉落一个带 BlockId 的工作台物品。
+     * 制作完成后在服务端线程验证多方块工作台的破坏：以生存模式挖掉离主方块最远的部位，
+     * 其余部位应全部随之消失，并且只掉落一个带 BlockId 的工作台物品。
      */
     internal fun notifyCraftCompleted() {
         val server = net.minecraftforge.fml.common.FMLCommonHandler.instance().minecraftServerInstance
         val playerId = focusedPlayerId
         val mainPos = craftTablePos
-        val extensionPos = craftExtensionPos
-        if (server == null || playerId == null || mainPos == null || extensionPos == null) {
+        val structure = craftStructurePositions
+        if (server == null || playerId == null || mainPos == null || structure.size < 2) {
             craftCompleted = true
             maybeLogPass()
             return
@@ -469,14 +469,13 @@ internal object FocusedSmokeRuntime {
             val world = player.serverWorld
             val searchBox = net.minecraft.util.math.AxisAlignedBB(mainPos).grow(3.0)
             val dropsBefore = world.getEntitiesWithinAABB(net.minecraft.entity.item.EntityItem::class.java, searchBox).size
-            player.interactionManager.tryHarvestBlock(extensionPos)
+            player.interactionManager.tryHarvestBlock(structure.last())
             val drops = world.getEntitiesWithinAABB(net.minecraft.entity.item.EntityItem::class.java, searchBox)
                 .filter { it.item.item === com.tacz.legacy.common.item.LegacyItems.GUN_SMITH_TABLE }
-            val mainGone = world.isAirBlock(mainPos)
-            val extensionGone = world.isAirBlock(extensionPos)
+            val remaining = structure.filterNot { world.isAirBlock(it) }
             val creative = player.capabilities.isCreativeMode
-            log("CRAFT_TABLE_BREAK mainGone=$mainGone extensionGone=$extensionGone tableDrops=${drops.size} dropsBefore=$dropsBefore creative=$creative")
-            if (!mainGone || !extensionGone) {
+            log("CRAFT_TABLE_BREAK broken=${structure.last()} remaining=$remaining tableDrops=${drops.size} dropsBefore=$dropsBefore creative=$creative")
+            if (remaining.isNotEmpty()) {
                 markFailure("craft_table_break_incomplete")
                 return@addScheduledTask
             }
@@ -866,14 +865,33 @@ internal object FocusedSmokeRuntime {
         player.serverWorld.setBlockState(pos, placedState)
         // 与物品放置相同：由 onBlockPlacedBy 放置多方块工作台的附属方块
         block.onBlockPlacedBy(player.serverWorld, pos, placedState, player, ItemStack.EMPTY)
-        val extensionDir = block.extensionDirection(placedState.getValue(com.tacz.legacy.common.block.LegacyGunSmithTableBlock.FACING))
-        val extensionPos = extensionDir?.let { pos.offset(it) }
-        craftExtensionPos = extensionPos
-        log("CRAFT_TABLE_EXTENSION pos=$extensionPos state=${extensionPos?.let { player.serverWorld.getBlockState(it) }}")
-        if (java.lang.Boolean.getBoolean("tacz.focusedSmoke.topDownView") && extensionDir != null) {
-            // 截图用：在工作台两端外侧放金块，模型应正好夹在两块金块之间
-            player.serverWorld.setBlockState(pos.offset(extensionDir.opposite), net.minecraft.init.Blocks.GOLD_BLOCK.defaultState)
-            player.serverWorld.setBlockState(pos.offset(extensionDir, 2), net.minecraft.init.Blocks.GOLD_BLOCK.defaultState)
+        val placedFacing = placedState.getValue(com.tacz.legacy.common.block.LegacyGunSmithTableBlock.FACING)
+        val structure = block.structurePositions(pos, placedFacing)
+        craftStructurePositions = structure
+        for (partPos in structure) {
+            val partState = player.serverWorld.getBlockState(partPos)
+            // 每个部位都应是普通的完整方块碰撞箱
+            val collision = partState.getCollisionBoundingBox(player.serverWorld, partPos)
+            log("CRAFT_TABLE_PART pos=$partPos state=$partState fullCollision=${collision == net.minecraft.block.Block.FULL_BLOCK_AABB}")
+            if (partState.block !== block || collision != net.minecraft.block.Block.FULL_BLOCK_AABB) {
+                markFailure("craft_table_part_invalid")
+            }
+        }
+        val frontView = java.lang.Boolean.getBoolean("tacz.focusedSmoke.frontView")
+        if ((java.lang.Boolean.getBoolean("tacz.focusedSmoke.topDownView") || frontView) && structure.size > 1) {
+            // 截图用：在工作台宽度方向两端外侧放与结构等高的金块柱，模型应正好夹在两列金块之间
+            val side = placedFacing.rotateY()
+            for (dy in 0 until block.layout.height) {
+                player.serverWorld.setBlockState(pos.offset(side.opposite).up(dy), net.minecraft.init.Blocks.GOLD_BLOCK.defaultState)
+                player.serverWorld.setBlockState(pos.offset(side, block.layout.width).up(dy), net.minecraft.init.Blocks.GOLD_BLOCK.defaultState)
+            }
+        }
+        if (frontView) {
+            // 截图用：站在工作台正前方 4 格处平视
+            val side = placedFacing.rotateY()
+            val centerX = pos.x + 0.5 + side.xOffset * (block.layout.width - 1) * 0.5 - placedFacing.xOffset * 4.0
+            val centerZ = pos.z + 0.5 + side.zOffset * (block.layout.width - 1) * 0.5 - placedFacing.zOffset * 4.0
+            player.connection.setPlayerLocation(centerX, pos.y.toDouble(), centerZ, placedFacing.horizontalAngle, 10.0f)
         }
         if (java.lang.Boolean.getBoolean("tacz.focusedSmoke.topDownView")) {
             // 截图用：把玩家移到工作台正上方，面朝南并垂直向下看（屏幕上方 = 南）

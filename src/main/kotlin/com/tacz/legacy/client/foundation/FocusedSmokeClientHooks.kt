@@ -908,7 +908,7 @@ internal object FocusedSmokeClientHooks {
             keepAliveGuiActive = false
         }
         // 截图用：俯视模式下先停留几秒再打开工作台界面
-        if (java.lang.Boolean.getBoolean("tacz.focusedSmoke.topDownView") && elapsedMs() < 5_000L) {
+        if ((java.lang.Boolean.getBoolean("tacz.focusedSmoke.topDownView") || java.lang.Boolean.getBoolean("tacz.focusedSmoke.frontView")) && elapsedMs() < 5_000L) {
             return
         }
         if (System.currentTimeMillis() - lastShootAttemptAtMs >= 1000L) {
