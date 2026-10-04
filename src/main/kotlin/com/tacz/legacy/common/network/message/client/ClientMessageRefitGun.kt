@@ -43,10 +43,22 @@ public class ClientMessageRefitGun() : IMessage, IMessageHandler<ClientMessageRe
             if (message.gunSlotIndex !in 0 until player.inventory.sizeInventory) {
                 return@addScheduledTask
             }
+            if (message.attachmentSlotIndex == message.gunSlotIndex) {
+                return@addScheduledTask
+            }
             val gunStack = player.inventory.getStackInSlot(message.gunSlotIndex)
             val attachmentStack = player.inventory.getStackInSlot(message.attachmentSlotIndex)
             val swapResult = LegacyGunRefitRuntime.swapAttachment(gunStack, attachmentStack, message.attachmentType) ?: return@addScheduledTask
-            player.inventory.setInventorySlotContents(message.attachmentSlotIndex, swapResult.previousAttachment)
+            // 只消耗一个配件；若槽位里还有剩余，则把卸下的旧配件另行返还给玩家，避免整组被覆盖丢失
+            val remaining = attachmentStack.copy().apply { shrink(1) }
+            if (remaining.isEmpty) {
+                player.inventory.setInventorySlotContents(message.attachmentSlotIndex, swapResult.previousAttachment)
+            } else {
+                player.inventory.setInventorySlotContents(message.attachmentSlotIndex, remaining)
+                if (!swapResult.previousAttachment.isEmpty) {
+                    ItemHandlerHelper.giveItemToPlayer(player, swapResult.previousAttachment)
+                }
+            }
             if (swapResult.requiresAmmoRefund) {
                 LegacyGunRefitRuntime.refundLoadedAmmo(gunStack, player.capabilities.isCreativeMode).refundStacks.forEach { stack ->
                     ItemHandlerHelper.giveItemToPlayer(player, stack)

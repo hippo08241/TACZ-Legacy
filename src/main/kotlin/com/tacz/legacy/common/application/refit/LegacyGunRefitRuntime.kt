@@ -96,6 +96,10 @@ internal object LegacyGunRefitRuntime {
             return null
         }
         val iGun = IGun.getIGunOrNull(gunStack) ?: return null
+        // 配件锁定的枪不允许改装（客户端也会检查，但服务端必须再次校验）
+        if (iGun.hasAttachmentLock(gunStack)) {
+            return null
+        }
         val iAttachment = IAttachment.getIAttachmentOrNull(attachmentStack) ?: return null
         if (iAttachment.getType(attachmentStack) != expectedType) {
             return null
@@ -105,7 +109,7 @@ internal object LegacyGunRefitRuntime {
         }
         val previousAttachment = iGun.getAttachment(gunStack, expectedType)
         val incomingId = iAttachment.getAttachmentId(attachmentStack)
-        iGun.installAttachment(gunStack, attachmentStack.copy())
+        iGun.installAttachment(gunStack, attachmentStack.copy().apply { count = 1 })
         if (iGun.getAttachmentId(gunStack, expectedType) != incomingId) {
             return null
         }
@@ -120,6 +124,9 @@ internal object LegacyGunRefitRuntime {
             return null
         }
         val iGun = IGun.getIGunOrNull(gunStack) ?: return null
+        if (iGun.hasAttachmentLock(gunStack)) {
+            return null
+        }
         val removed = iGun.getAttachment(gunStack, type)
         if (removed.isEmpty) {
             return null
