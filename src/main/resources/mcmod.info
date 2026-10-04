@@ -7,8 +7,8 @@
   "mcversion": "${mcversion}",
   "url": "https://github.com/KasumiNova/TACZ-Legacy",
   "updateUrl": "",
-  "authorList": ["MCModderAnchor (TACZ)", "KasumiNova", "Hippo0824"],
-  "credits": "Original TACZ by MCModderAnchor; 1.12.2 port by KasumiNova; fixes by Hippo0824",
+  "authorList": ["nekocrane (TACZ)", "KasumiNova", "Hippo0824"],
+  "credits": "Original TACZ by nekocrane; 1.12.2 port by KasumiNova; fixes by Hippo0824",
   "logoFile": "",
   "screenshots": [],
   "dependencies": ["required-after:forgelin_continuous"]
