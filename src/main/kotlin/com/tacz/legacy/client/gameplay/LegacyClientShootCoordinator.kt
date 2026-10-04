@@ -171,42 +171,45 @@ internal object LegacyClientShootCoordinator {
         val counter = AtomicInteger(1) // first shot already played
         val useSilence = TACZGunSoundRouting.resolveNearbyFireSoundProfile(stack).useSilenceSound
 
-        activeBurstFuture = scheduledExecutor.scheduleAtFixedRate({
-            try {
+        var future: ScheduledFuture<*>? = null
+        future = scheduledExecutor.scheduleAtFixedRate({
+            // 调度线程只负责计时；读取玩家/ItemStack 状态和播放动画都必须回到客户端主线程执行
+            Minecraft.getMinecraft().addScheduledTask {
+                val self = future ?: return@addScheduledTask
+                if (self.isCancelled) {
+                    return@addScheduledTask
+                }
                 val count = counter.get()
                 if (count >= maxCount || player.isDead) {
-                    activeBurstFuture?.cancel(false)
-                    return@scheduleAtFixedRate
+                    self.cancel(false)
+                    return@addScheduledTask
                 }
                 if (gunData.hasHeatData && iGun.isOverheatLocked(stack)) {
-                    activeBurstFuture?.cancel(false)
-                    return@scheduleAtFixedRate
-                }
-                Minecraft.getMinecraft().addScheduledTask {
-                    val fireEvent = GunFireEvent(player, stack, Side.CLIENT)
-                    if (!MinecraftForge.EVENT_BUS.post(fireEvent)) {
-                        val animationTriggered = LegacyClientGunAnimationDriver.triggerIfInitialized(stack, GunAnimationConstant.INPUT_SHOOT)
-                        logFocusedSmokeShootTrigger(
-                            gunId = iGun.getGunId(stack).toString(),
-                            display = display,
-                            animationTriggered = animationTriggered,
-                            phase = "burst",
-                        )
-                        TACZClientGunSoundCoordinator.stopPlayGunSound(display, SoundManager.INSPECT_SOUND)
-                        if (useSilence) {
-                            TACZClientGunSoundCoordinator.playSilenceSound(player, display, gunData)
-                        } else {
-                            TACZClientGunSoundCoordinator.playShootSound(player, display, gunData)
-                        }
-                        FirstPersonRenderGunEvent.onShoot()
-                        TACZCameraRecoilHandler.onLocalGunFire(player, stack)
-                    }
+                    self.cancel(false)
+                    return@addScheduledTask
                 }
                 counter.incrementAndGet()
-            } catch (_: Exception) {
-                activeBurstFuture?.cancel(false)
+                val fireEvent = GunFireEvent(player, stack, Side.CLIENT)
+                if (!MinecraftForge.EVENT_BUS.post(fireEvent)) {
+                    val animationTriggered = LegacyClientGunAnimationDriver.triggerIfInitialized(stack, GunAnimationConstant.INPUT_SHOOT)
+                    logFocusedSmokeShootTrigger(
+                        gunId = iGun.getGunId(stack).toString(),
+                        display = display,
+                        animationTriggered = animationTriggered,
+                        phase = "burst",
+                    )
+                    TACZClientGunSoundCoordinator.stopPlayGunSound(display, SoundManager.INSPECT_SOUND)
+                    if (useSilence) {
+                        TACZClientGunSoundCoordinator.playSilenceSound(player, display, gunData)
+                    } else {
+                        TACZClientGunSoundCoordinator.playShootSound(player, display, gunData)
+                    }
+                    FirstPersonRenderGunEvent.onShoot()
+                    TACZCameraRecoilHandler.onLocalGunFire(player, stack)
+                }
             }
         }, period, period, TimeUnit.MILLISECONDS)
+        activeBurstFuture = future
     }
 
     private fun getClientShootCoolDown(stack: ItemStack, iGun: IGun, gunData: GunCombatData): Long {
