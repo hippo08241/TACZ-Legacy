@@ -740,7 +740,7 @@ internal object FocusedSmokeRuntime {
         }
 
         plan.explosiveGunId?.let { explosiveGunId ->
-            player.inventory.setInventorySlotContents(1, createGunStack(explosiveGunId))
+            player.inventory.setInventorySlotContents(1, createGunStack(explosiveGunId, fullyLoaded = true))
         }
 
         player.inventory.markDirty()
@@ -801,13 +801,13 @@ internal object FocusedSmokeRuntime {
             }
     }
 
-    private fun createGunStack(gunId: ResourceLocation): ItemStack {
+    private fun createGunStack(gunId: ResourceLocation, fullyLoaded: Boolean = false): ItemStack {
         val stack = ItemStack(LegacyItems.MODERN_KINETIC_GUN)
         val iGun = stack.item as IGun
         val gunData = GunDataAccessor.getGunData(gunId)
         val ammoAmount = gunData?.ammoAmount?.coerceAtLeast(1) ?: 1
-        // 少装一发，保证换弹流程一定会被触发（单发装填的枪从 0 发开始）
-        val initialAmmo = ammoAmount - 1
+        // 常规枪少装一发，保证换弹流程一定会被触发（单发装填的枪从 0 发开始）；爆炸物直接装满
+        val initialAmmo = if (fullyLoaded) ammoAmount else ammoAmount - 1
         iGun.setGunId(stack, gunId)
         iGun.setCurrentAmmoCount(stack, initialAmmo)
         iGun.setDummyAmmoAmount(stack, (ammoAmount * 8).coerceAtLeast(96))
