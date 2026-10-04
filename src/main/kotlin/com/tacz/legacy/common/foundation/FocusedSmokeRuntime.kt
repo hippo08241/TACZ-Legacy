@@ -443,9 +443,50 @@ internal object FocusedSmokeRuntime {
     @Volatile
     private var craftCompleted: Boolean = false
 
+    @Volatile
+    private var craftExtensionPos: net.minecraft.util.math.BlockPos? = null
+
+    /**
+     * 制作完成后在服务端线程验证多方块工作台的破坏：以生存模式挖掉附属方块，
+     * 主方块应随之消失，并且只掉落一个带 BlockId 的工作台物品。
+     */
     internal fun notifyCraftCompleted() {
-        craftCompleted = true
-        maybeLogPass()
+        val server = net.minecraftforge.fml.common.FMLCommonHandler.instance().minecraftServerInstance
+        val playerId = focusedPlayerId
+        val mainPos = craftTablePos
+        val extensionPos = craftExtensionPos
+        if (server == null || playerId == null || mainPos == null || extensionPos == null) {
+            craftCompleted = true
+            maybeLogPass()
+            return
+        }
+        server.addScheduledTask {
+            val player = server.playerList.getPlayerByUUID(playerId)
+            if (player == null) {
+                markFailure("craft_break_player_missing")
+                return@addScheduledTask
+            }
+            val world = player.serverWorld
+            val searchBox = net.minecraft.util.math.AxisAlignedBB(mainPos).grow(3.0)
+            val dropsBefore = world.getEntitiesWithinAABB(net.minecraft.entity.item.EntityItem::class.java, searchBox).size
+            player.interactionManager.tryHarvestBlock(extensionPos)
+            val drops = world.getEntitiesWithinAABB(net.minecraft.entity.item.EntityItem::class.java, searchBox)
+                .filter { it.item.item === com.tacz.legacy.common.item.LegacyItems.GUN_SMITH_TABLE }
+            val mainGone = world.isAirBlock(mainPos)
+            val extensionGone = world.isAirBlock(extensionPos)
+            val creative = player.capabilities.isCreativeMode
+            log("CRAFT_TABLE_BREAK mainGone=$mainGone extensionGone=$extensionGone tableDrops=${drops.size} dropsBefore=$dropsBefore creative=$creative")
+            if (!mainGone || !extensionGone) {
+                markFailure("craft_table_break_incomplete")
+                return@addScheduledTask
+            }
+            if (!creative && drops.size != 1) {
+                markFailure("craft_table_break_drops_${drops.size}")
+                return@addScheduledTask
+            }
+            craftCompleted = true
+            maybeLogPass()
+        }
     }
 
     internal val emptyStartEnabled: Boolean
@@ -815,10 +856,25 @@ internal object FocusedSmokeRuntime {
         val pos = player.position.offset(look, 2)
         // 与玩家手动放置相同：通过 getStateForPlacement 决定朝向
         val block = com.tacz.legacy.common.block.LegacyBlocks.GUN_SMITH_TABLE
-        val placedState = block.getStateForPlacement(
+        var placedState = block.getStateForPlacement(
             player.serverWorld, pos, net.minecraft.util.EnumFacing.UP, 0.5f, 1.0f, 0.5f, 0, player, net.minecraft.util.EnumHand.MAIN_HAND,
         )
+        // 截图用：强制工作台朝向
+        System.getProperty("tacz.focusedSmoke.placeFacing")?.let(net.minecraft.util.EnumFacing::byName)?.let { forced ->
+            placedState = placedState.withProperty(com.tacz.legacy.common.block.LegacyGunSmithTableBlock.FACING, forced)
+        }
         player.serverWorld.setBlockState(pos, placedState)
+        // 与物品放置相同：由 onBlockPlacedBy 放置多方块工作台的附属方块
+        block.onBlockPlacedBy(player.serverWorld, pos, placedState, player, ItemStack.EMPTY)
+        val extensionDir = block.extensionDirection(placedState.getValue(com.tacz.legacy.common.block.LegacyGunSmithTableBlock.FACING))
+        val extensionPos = extensionDir?.let { pos.offset(it) }
+        craftExtensionPos = extensionPos
+        log("CRAFT_TABLE_EXTENSION pos=$extensionPos state=${extensionPos?.let { player.serverWorld.getBlockState(it) }}")
+        if (java.lang.Boolean.getBoolean("tacz.focusedSmoke.topDownView") && extensionDir != null) {
+            // 截图用：在工作台两端外侧放金块，模型应正好夹在两块金块之间
+            player.serverWorld.setBlockState(pos.offset(extensionDir.opposite), net.minecraft.init.Blocks.GOLD_BLOCK.defaultState)
+            player.serverWorld.setBlockState(pos.offset(extensionDir, 2), net.minecraft.init.Blocks.GOLD_BLOCK.defaultState)
+        }
         if (java.lang.Boolean.getBoolean("tacz.focusedSmoke.topDownView")) {
             // 截图用：把玩家移到工作台正上方，面朝南并垂直向下看（屏幕上方 = 南）
             player.connection.setPlayerLocation(pos.x + 0.5, pos.y + 7.0, pos.z + 0.5, 0.0f, 90.0f)

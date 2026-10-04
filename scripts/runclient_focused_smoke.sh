@@ -320,6 +320,7 @@ GRADLE_CMD=(
   "-Dtacz.focusedSmoke.craft=${CRAFT}"
   "-Dtacz.focusedSmoke.craftHoldMs=${CRAFT_HOLD_MS}"
   "-Dtacz.focusedSmoke.topDownView=${FOCUSED_SMOKE_TOP_DOWN_VIEW:-false}"
+  "-Dtacz.focusedSmoke.placeFacing=${FOCUSED_SMOKE_PLACE_FACING:-}"
   "-Dtacz.audio.backend=${AUDIO_BACKEND}"
   "-Dtacz.audio.preflight=${AUDIO_PREFLIGHT}"
   "-Dtacz.audio.preflight.strict=${AUDIO_PREFLIGHT_STRICT}"
