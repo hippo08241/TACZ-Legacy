@@ -18,5 +18,13 @@
       "tacz:block/target_block_hit/target_block_hit_6",
       "tacz:block/target_block_hit/target_block_hit_7"
     ]
+  },
+  "bullet_whiz": {
+    "subtitle": "subtitle.tacz.bullet_whiz",
+    "sounds": [
+      "tacz:bullet/whiz_1",
+      "tacz:bullet/whiz_2",
+      "tacz:bullet/whiz_3"
+    ]
   }
 }

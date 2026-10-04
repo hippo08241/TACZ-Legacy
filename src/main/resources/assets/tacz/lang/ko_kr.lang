@@ -195,6 +195,7 @@ painting.tacz.blood_strike_2.author=Blood Strike
 painting.tacz.blood_strike_2.title=특별 콜라보
 subtitle.tacz.gun=총 소리
 subtitle.tacz.target_block_hit=타겟 블럭: 피격됨
+subtitle.tacz.bullet_whiz=총알이 스쳐 지나감
 tacz.resources.modresources=TACZ 총 팩 리소스들
 toast.tacz.level_up=레벨 업!
 toast.tacz.sub.damage_up=무기가 더 치명적으로 변합니다

@@ -10,10 +10,12 @@ import net.minecraftforge.fml.common.eventhandler.SubscribeEvent
 internal object LegacySoundEvents {
     internal val GUN: SoundEvent = create("gun")
     internal val TARGET_BLOCK_HIT: SoundEvent = create("target_block_hit")
+    internal val BULLET_WHIZ: SoundEvent = create("bullet_whiz")
 
     internal val allSounds: List<SoundEvent> = listOf(
         GUN,
         TARGET_BLOCK_HIT,
+        BULLET_WHIZ,
     )
 
     private fun create(path: String): SoundEvent {

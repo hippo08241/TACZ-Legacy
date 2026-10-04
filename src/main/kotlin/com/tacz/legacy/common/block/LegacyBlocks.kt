@@ -214,13 +214,25 @@ internal class LegacyTargetBlock(path: String) : LegacyBaseBlock(path, Material.
         if (worldIn.isRemote) {
             return true
         }
-        val tile = worldIn.getTileEntity(pos) as? TargetTileEntity ?: return true
+        trigger(worldIn, pos, state)
+        return true
+    }
+
+    /** 被子弹击中时触发（与上游 TargetBlock.onProjectileHit 一致）。 */
+    internal fun onBulletHit(worldIn: World, pos: BlockPos, state: IBlockState): Unit {
+        if (worldIn.isRemote) {
+            return
+        }
+        trigger(worldIn, pos, state)
+    }
+
+    private fun trigger(worldIn: World, pos: BlockPos, state: IBlockState): Unit {
+        val tile = worldIn.getTileEntity(pos) as? TargetTileEntity ?: return
         tile.trigger()
         worldIn.notifyBlockUpdate(pos, state, state, 3)
         worldIn.notifyNeighborsOfStateChange(pos, this, false)
         worldIn.playSound(null, pos, LegacySoundEvents.TARGET_BLOCK_HIT, SoundCategory.BLOCKS, 1.0f, 1.0f)
         worldIn.scheduleUpdate(pos, this, 40)
-        return true
     }
 
     override fun canProvidePower(state: IBlockState): Boolean = true

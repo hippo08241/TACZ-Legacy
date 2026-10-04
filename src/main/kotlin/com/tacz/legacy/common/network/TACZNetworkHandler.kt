@@ -50,6 +50,7 @@ public object TACZNetworkHandler {
         registerS2C(ServerMessageGunKill.Handler::class.java, ServerMessageGunKill::class.java)
         registerS2C(ServerMessageRefreshRefitScreen.Handler::class.java, ServerMessageRefreshRefitScreen::class.java)
         registerS2C(ServerMessageSyncBaseTimestamp.Handler::class.java, ServerMessageSyncBaseTimestamp::class.java)
+        registerS2C(ServerMessageBulletHitBlock.Handler::class.java, ServerMessageBulletHitBlock::class.java)
     }
 
     /**
@@ -73,6 +74,14 @@ public object TACZNetworkHandler {
             128.0,
         )
         CHANNEL.sendToAllAround(msg, point)
+    }
+
+    /**
+     * 发送消息到指定位置附近的所有客户端。
+     */
+    @JvmStatic
+    public fun sendToAllAround(msg: IMessage, dimension: Int, x: Double, y: Double, z: Double, range: Double) {
+        CHANNEL.sendToAllAround(msg, NetworkRegistry.TargetPoint(dimension, x, y, z, range))
     }
 
     /**

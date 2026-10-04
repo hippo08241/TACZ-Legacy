@@ -3,18 +3,28 @@ package com.tacz.legacy.common.entity
 import com.tacz.legacy.TACZLegacy
 import com.tacz.legacy.api.event.EntityHurtByGunEvent
 import com.tacz.legacy.api.event.EntityKillByGunEvent
+import com.tacz.legacy.client.particle.LegacyBulletClientEffects
+import com.tacz.legacy.common.block.LegacyTargetBlock
 import com.tacz.legacy.common.resource.BulletCombatData
 import com.tacz.legacy.common.resource.DistanceDamagePoint
 import com.tacz.legacy.common.config.HeadShotAabbConfigRead
 import com.tacz.legacy.common.config.LegacyConfigManager
 import com.tacz.legacy.common.network.TACZNetworkHandler
+import com.tacz.legacy.common.network.message.event.ServerMessageBulletHitBlock
 import com.tacz.legacy.common.network.message.event.ServerMessageGunHurt
 import com.tacz.legacy.common.network.message.event.ServerMessageGunKill
 import io.netty.buffer.ByteBuf
+import net.minecraft.block.BlockGlass
+import net.minecraft.block.BlockLeaves
+import net.minecraft.block.BlockPane
+import net.minecraft.block.BlockStainedGlass
+import net.minecraft.block.material.Material
+import net.minecraft.block.state.IBlockState
 import net.minecraft.entity.Entity
 import net.minecraft.entity.EntityList
 import net.minecraft.entity.EntityLivingBase
 import net.minecraft.entity.item.EntityMinecartEmpty
+import net.minecraft.entity.player.EntityPlayerMP
 import net.minecraft.entity.projectile.EntityThrowable
 import net.minecraft.entity.SharedMonsterAttributes
 import net.minecraft.nbt.NBTTagCompound
@@ -25,11 +35,14 @@ import net.minecraft.util.EntityDamageSource
 import net.minecraft.util.EntityDamageSourceIndirect
 import net.minecraft.util.ResourceLocation
 import net.minecraft.util.math.AxisAlignedBB
+import net.minecraft.util.math.BlockPos
 import net.minecraft.util.math.MathHelper
 import net.minecraft.util.math.RayTraceResult
 import net.minecraft.util.math.Vec3d
 import net.minecraft.world.World
 import net.minecraftforge.common.MinecraftForge
+import net.minecraftforge.event.ForgeEventFactory
+import net.minecraftforge.event.world.BlockEvent
 import net.minecraftforge.fml.common.registry.EntityEntry
 import net.minecraftforge.fml.common.registry.EntityEntryBuilder
 import net.minecraftforge.fml.common.registry.IEntityAdditionalSpawnData
@@ -75,6 +88,7 @@ internal class EntityKineticBullet : EntityThrowable, IEntityAdditionalSpawnData
         private const val DEFAULT_FORWARD_COMPONENT = 8.0
         private const val DEFAULT_INACCURACY_SCALE = 0.007499999832361937
         private const val FOCUSED_SMOKE_BULLET_SPEED_MULTIPLIER_PROPERTY = "tacz.focusedSmoke.bulletSpeedMultiplier"
+        private const val BLOCK_HIT_EFFECT_RANGE = 64.0
 
         internal fun computeShotDirection(pitch: Double, yaw: Double, spreadX: Double, spreadY: Double): Vec3d {
             val direction = Vector3d(spreadX, spreadY, DEFAULT_FORWARD_COMPONENT)
@@ -134,6 +148,10 @@ internal class EntityKineticBullet : EntityThrowable, IEntityAdditionalSpawnData
     /** 弹药 ID，供下游渲染/特效使用  */
     internal var ammoId: ResourceLocation = ResourceLocation(TACZLegacy.MOD_ID, "empty")
         private set
+    /** 客户端：是否已经对本地玩家播放过掠过音效 */
+    internal var whizPlayed: Boolean = false
+    internal val shooterId: Int
+        get() = shooterEntityId
     internal var firstPersonRenderOffset: Vector3f? = null
     internal var firstPersonCameraPitch: Float? = null
     internal var firstPersonCameraYaw: Float? = null
@@ -306,27 +324,43 @@ internal class EntityKineticBullet : EntityThrowable, IEntityAdditionalSpawnData
             RayTraceResult.Type.ENTITY -> {
                 val target = result.entityHit ?: return
                 val hitPos = result.hitVec ?: Vec3d(target.posX, target.posY + target.height * 0.5, target.posZ)
+                // 射手本身不会被自己的子弹命中，也不应消耗穿透次数
+                if (target == thrower) return
                 val headShot = target is EntityLivingBase && isHeadShot(target, hitPos)
-                if (target != thrower) {
-                    val feedback = applyDirectHitDamage(target, hitPos, headShot)
-                    if (hasExplosion) {
-                        triggerExplosion(hitPos)
-                        emitHitFeedback(target, feedback)
-                        setDead()
-                        return
-                    }
+                val feedback = applyDirectHitDamage(target, hitPos, headShot)
+                if (hasExplosion) {
+                    triggerExplosion(hitPos)
                     emitHitFeedback(target, feedback)
+                    setDead()
+                    return
                 }
+                emitHitFeedback(target, feedback)
                 pierce--
                 if (pierce <= 0) setDead()
             }
             RayTraceResult.Type.BLOCK -> {
                 val hitPos = result.hitVec ?: Vec3d(posX, posY, posZ)
+                val blockPos = result.blockPos
+                val state = world.getBlockState(blockPos)
+                (state.block as? LegacyTargetBlock)?.onBulletHit(world, blockPos, state)
                 if (hasExplosion) {
                     triggerExplosion(hitPos)
                     setDead()
                     return
                 }
+                if (tryBreakFragileBlock(blockPos, state)) {
+                    // destroyBlock 已经播放了破碎粒子与音效
+                    setDead()
+                    return
+                }
+                TACZNetworkHandler.sendToAllAround(
+                    ServerMessageBulletHitBlock(blockPos, result.sideHit, hitPos.x, hitPos.y, hitPos.z),
+                    world.provider.dimension,
+                    hitPos.x,
+                    hitPos.y,
+                    hitPos.z,
+                    BLOCK_HIT_EFFECT_RANGE,
+                )
                 if (igniteBlock && thrower != null) {
                     val pos = result.blockPos.offset(result.sideHit)
                     if (world.isAirBlock(pos) && LegacyConfigManager.common.igniteBlock) {
@@ -337,6 +371,42 @@ internal class EntityKineticBullet : EntityThrowable, IEntityAdditionalSpawnData
             }
             else -> {}
         }
+    }
+
+    /**
+     * 玻璃、玻璃板、树叶等易碎方块被子弹直接击碎（受 DestroyGlass 配置控制）。
+     * 玩家射手会触发 BreakEvent 以兼容领地保护，非玩家射手遵循 mobGriefing。
+     */
+    private fun tryBreakFragileBlock(blockPos: BlockPos, state: IBlockState): Boolean {
+        if (!LegacyConfigManager.common.destroyGlass) {
+            return false
+        }
+        if (!isFragileBlock(state)) {
+            return false
+        }
+        if (state.getBlockHardness(world, blockPos) < 0.0f) {
+            return false
+        }
+        val shooter = thrower
+        if (shooter is EntityPlayerMP) {
+            if (!world.isBlockModifiable(shooter, blockPos) || !shooter.capabilities.allowEdit) {
+                return false
+            }
+            if (MinecraftForge.EVENT_BUS.post(BlockEvent.BreakEvent(world, blockPos, state, shooter))) {
+                return false
+            }
+        } else if (!ForgeEventFactory.getMobGriefingEvent(world, shooter)) {
+            return false
+        }
+        return world.destroyBlock(blockPos, false)
+    }
+
+    private fun isFragileBlock(state: IBlockState): Boolean {
+        val block = state.block
+        return block is BlockGlass ||
+            block is BlockStainedGlass ||
+            (block is BlockPane && state.material == Material.GLASS) ||
+            block is BlockLeaves
     }
 
     override fun writeEntityToNBT(compound: NBTTagCompound) {
@@ -561,6 +631,10 @@ internal class EntityKineticBullet : EntityThrowable, IEntityAdditionalSpawnData
         // Setting it here kills render-frame interpolation (prev == current → no lerp).
 
         setPosition(posX, posY, posZ)
+
+        if (world.isRemote) {
+            LegacyBulletClientEffects.tickBulletWhiz(this)
+        }
 
         // ---- 阻力与重力 (只用 TACZ 的参数，不叠加 vanilla 0.99f) ----
         var frictionFactor = friction
