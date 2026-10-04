@@ -23,6 +23,8 @@ public class ShooterDataHolder {
     @JvmField public var reloadTimestamp: Long = -1L
     @JvmField public var reloadStateType: ReloadState.StateType = ReloadState.StateType.NOT_RELOADING
     @JvmField public var currentGunItem: Supplier<ItemStack>? = null
+    /** 最近一次 draw 时的“快捷栏槽位|枪械 ID”签名，用于服务端检测切枪 */
+    @JvmField public var drawnGunSignature: String? = null
     @JvmField public var currentPutAwayTimeS: Float = 0f
     @JvmField public var sprintTimeS: Float = 0f
     @JvmField public var sprintTimestamp: Long = -1L

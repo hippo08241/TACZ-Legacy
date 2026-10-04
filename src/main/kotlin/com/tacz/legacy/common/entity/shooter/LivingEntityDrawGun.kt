@@ -6,6 +6,7 @@ import com.tacz.legacy.common.network.TACZNetworkHandler
 import com.tacz.legacy.common.network.message.event.ServerMessageGunDraw
 import com.tacz.legacy.common.resource.GunDataAccessor
 import net.minecraft.entity.EntityLivingBase
+import net.minecraft.entity.player.EntityPlayer
 import net.minecraft.item.ItemStack
 import net.minecraftforge.common.MinecraftForge
 import net.minecraftforge.fml.relauncher.Side
@@ -48,6 +49,7 @@ public class LivingEntityDrawGun(
         }
 
         data.currentGunItem = gunItemSupplier
+        data.drawnGunSignature = gunSignature(shooter, newGunItem)
         updatePutAwayTime()
     }
 
@@ -60,6 +62,19 @@ public class LivingEntityDrawGun(
         var coolDown = (gunData.drawTimeS * 1000).toLong() - (System.currentTimeMillis() - data.drawTimestamp)
         coolDown -= 5 // 5ms window for latency
         return if (coolDown < 0) 0L else coolDown
+    }
+
+    public companion object {
+        /**
+         * 生成“快捷栏槽位|枪械 ID”签名。仅比较枪械 ID 无法区分背包中两把相同的枪，
+         * 会导致服务端继续引用旧枪（已打空），出现只播放开火动画却不发射子弹的问题。
+         */
+        @JvmStatic
+        public fun gunSignature(shooter: EntityLivingBase, stack: ItemStack): String {
+            val slot = (shooter as? EntityPlayer)?.inventory?.currentItem ?: -1
+            val gunId = (stack.item as? IGun)?.getGunId(stack)
+            return "$slot|$gunId"
+        }
     }
 
     private fun updatePutAwayTime() {

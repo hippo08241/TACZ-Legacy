@@ -4,10 +4,10 @@ import com.tacz.legacy.api.entity.IGunOperator
 import com.tacz.legacy.api.item.IGun
 import com.tacz.legacy.common.network.TACZNetworkHandler
 import com.tacz.legacy.common.network.message.event.ServerMessageSyncBaseTimestamp
-import net.minecraft.item.ItemStack
 import net.minecraft.entity.EntityLivingBase
 import net.minecraft.entity.player.EntityPlayerMP
 import com.tacz.legacy.common.entity.shooter.BurstFireTaskScheduler
+import com.tacz.legacy.common.entity.shooter.LivingEntityDrawGun
 import net.minecraftforge.event.entity.EntityJoinWorldEvent
 import net.minecraftforge.event.entity.living.LivingEvent
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent
@@ -57,24 +57,16 @@ internal object ShooterTickHandler {
             if (holder.currentGunItem != null) {
                 operator.initialData()
                 holder.currentGunItem = null
+                holder.drawnGunSignature = null
             }
             return
         }
 
-        val syncedGun = holder.currentGunItem?.get()
-        if (!isSameGunStack(mainHand, syncedGun)) {
+        val signature = LivingEntityDrawGun.gunSignature(entity, mainHand)
+        if (holder.currentGunItem == null || holder.drawnGunSignature != signature) {
             operator.draw(Supplier { entity.heldItemMainhand })
         }
 
         operator.tick()
-    }
-
-    private fun isSameGunStack(mainHand: ItemStack, syncedGun: ItemStack?): Boolean {
-        if (syncedGun == null || syncedGun.isEmpty) {
-            return false
-        }
-        val mainGun = mainHand.item as? IGun ?: return false
-        val syncedIGun = syncedGun.item as? IGun ?: return false
-        return mainGun.getGunId(mainHand) == syncedIGun.getGunId(syncedGun)
     }
 }
