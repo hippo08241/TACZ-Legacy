@@ -396,13 +396,15 @@ internal class TACZGunScriptAPI {
 
     fun hasHeatData(): Boolean = gunData?.hasHeatData == true
 
-    fun getHeatMinRpm(): Float = if (gunData?.hasHeatData == true) gunData!!.heatMinRpmModifier else 0f
-    fun getHeatMaxRpm(): Float = if (gunData?.hasHeatData == true) gunData!!.heatMaxRpmModifier else 0f
-    fun getHeatMinInaccuracy(): Float = if (gunData?.hasHeatData == true) gunData!!.heatMinInaccuracy else 0f
-    fun getHeatMaxInaccuracy(): Float = if (gunData?.hasHeatData == true) gunData!!.heatMaxInaccuracy else 0f
+    private fun heatData(): GunCombatData? = gunData?.takeIf { it.hasHeatData }
 
-    fun getHeatMax(): Float = if (gunData?.hasHeatData == true) gunData!!.heatMax else 0f
-    fun getHeatPerShot(): Float = if (gunData?.hasHeatData == true) gunData!!.heatPerShot else 0f
+    fun getHeatMinRpm(): Float = heatData()?.heatMinRpmModifier ?: 0f
+    fun getHeatMaxRpm(): Float = heatData()?.heatMaxRpmModifier ?: 0f
+    fun getHeatMinInaccuracy(): Float = heatData()?.heatMinInaccuracy ?: 0f
+    fun getHeatMaxInaccuracy(): Float = heatData()?.heatMaxInaccuracy ?: 0f
+
+    fun getHeatMax(): Float = heatData()?.heatMax ?: 0f
+    fun getHeatPerShot(): Float = heatData()?.heatPerShot ?: 0f
 
     fun isOverheatLocked(): Boolean = iGun?.isOverheatLocked(itemStack) == true
 
@@ -410,8 +412,8 @@ internal class TACZGunScriptAPI {
         iGun?.setOverheatLocked(itemStack, locked)
     }
 
-    fun getOverheatTime(): Long = if (gunData?.hasHeatData == true) gunData!!.heatOverHeatTimeMs else 0L
-    fun getCoolingDelay(): Long = if (gunData?.hasHeatData == true) gunData!!.heatCoolingDelayMs else 0L
+    fun getOverheatTime(): Long = heatData()?.heatOverHeatTimeMs ?: 0L
+    fun getCoolingDelay(): Long = heatData()?.heatCoolingDelayMs ?: 0L
 
     fun calcHeatReduction(heatTimestamp: Long): Float {
         val data = gunData ?: return 0f

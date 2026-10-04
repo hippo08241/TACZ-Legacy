@@ -246,19 +246,21 @@ internal class RenderKineticBullet(renderManager: RenderManager) : Render<Entity
                     }
                 }
             }
-            if (firstPersonOffset != null) {
+            val cameraYaw = entity.firstPersonCameraYaw
+            val cameraPitch = entity.firstPersonCameraPitch
+            if (firstPersonOffset != null && cameraYaw != null && cameraPitch != null) {
                 val offsetReducer = max(0.0, (50.0 - disToEye)) / 50.0
                 debugOffsetReducer = offsetReducer
                 debugFirstPersonOffset = Vector3f(firstPersonOffset)
-                GlStateManager.rotate(-(entity.firstPersonCameraYaw!! + 180.0f), 0.0f, 1.0f, 0.0f)
-                GlStateManager.rotate(-entity.firstPersonCameraPitch!!, 1.0f, 0.0f, 0.0f)
+                GlStateManager.rotate(-(cameraYaw + 180.0f), 0.0f, 1.0f, 0.0f)
+                GlStateManager.rotate(-cameraPitch, 1.0f, 0.0f, 0.0f)
                 GlStateManager.translate(
                     firstPersonOffset.x * offsetReducer.toFloat(),
                     firstPersonOffset.y * offsetReducer.toFloat(),
                     firstPersonOffset.z * offsetReducer.toFloat(),
                 )
-                GlStateManager.rotate(entity.firstPersonCameraPitch!!, 1.0f, 0.0f, 0.0f)
-                GlStateManager.rotate(entity.firstPersonCameraYaw!! + 180.0f, 0.0f, 1.0f, 0.0f)
+                GlStateManager.rotate(cameraPitch, 1.0f, 0.0f, 0.0f)
+                GlStateManager.rotate(cameraYaw + 180.0f, 0.0f, 1.0f, 0.0f)
                 debugOriginAfterOffset = projectCurrentPoint(0.0f, 0.0f, 0.0f)
             }
         }
