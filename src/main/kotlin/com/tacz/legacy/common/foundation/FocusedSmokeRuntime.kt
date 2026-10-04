@@ -275,6 +275,9 @@ internal object FocusedSmokeRuntime {
     private const val DUPLICATE_GUN_PROPERTY: String = "tacz.focusedSmoke.duplicateGun"
     internal const val DUPLICATE_GUN_SLOT: Int = 2
     private const val GHOST_STRESS_PROPERTY: String = "tacz.focusedSmoke.ghostShotStress"
+    private const val REAL_AMMO_PROPERTY: String = "tacz.focusedSmoke.realAmmo"
+    private const val EMPTY_START_PROPERTY: String = "tacz.focusedSmoke.emptyStart"
+    internal const val REAL_AMMO_FIRST_SLOT: Int = 9
     internal const val GHOST_STRESS_GUN_SLOT: Int = 3
 
     private val loggedKeys = ConcurrentHashMap.newKeySet<String>()
@@ -421,6 +424,14 @@ internal object FocusedSmokeRuntime {
         get() = java.lang.Boolean.getBoolean(DUPLICATE_GUN_PROPERTY)
 
     /** Ghost shot 压力测试：额外放一把装满的同款枪到 3 号槽，并在常规射击后反复“疾跑→开火 / 切枪→开火” */
+    /** 不使用 dummy 弹药，而是在背包放入真实弹药物品，验证换弹时消耗背包弹药的生存模式流程 */
+    internal val realAmmoEnabled: Boolean
+        get() = java.lang.Boolean.getBoolean(REAL_AMMO_PROPERTY)
+
+    /** 常规枪以完全打空（弹匣 0、枪膛无弹）的状态开始，验证空仓换弹 */
+    internal val emptyStartEnabled: Boolean
+        get() = java.lang.Boolean.getBoolean(EMPTY_START_PROPERTY)
+
     internal val ghostShotStressEnabled: Boolean
         get() = java.lang.Boolean.getBoolean(GHOST_STRESS_PROPERTY)
 
@@ -691,6 +702,25 @@ internal object FocusedSmokeRuntime {
             }
         }
         player.inventory.setInventorySlotContents(0, regularStack)
+        if (emptyStartEnabled) {
+            (regularStack.item as? IGun)?.let { gun ->
+                gun.setCurrentAmmoCount(regularStack, 0)
+                gun.setBulletInBarrel(regularStack, false)
+            }
+        }
+        if (realAmmoEnabled) {
+            regularStack.tagCompound?.removeTag(IGun.DUMMY_AMMO_TAG)
+            val ammoId = GunDataAccessor.getGunData(plan.regularGunId)?.ammoId
+            if (ammoId != null) {
+                // 放两组真实弹药（每组按该弹药的最大堆叠数），用于验证换弹消耗
+                repeat(2) { index ->
+                    val ammoStack = ItemStack(LegacyItems.AMMO)
+                    LegacyItems.AMMO.setAmmoId(ammoStack, ammoId)
+                    ammoStack.count = ammoStack.maxStackSize
+                    player.inventory.setInventorySlotContents(REAL_AMMO_FIRST_SLOT + index, ammoStack)
+                }
+            }
+        }
         if (ghostShotStressEnabled) {
             player.inventory.setInventorySlotContents(GHOST_STRESS_GUN_SLOT, regularStack.copy())
         }

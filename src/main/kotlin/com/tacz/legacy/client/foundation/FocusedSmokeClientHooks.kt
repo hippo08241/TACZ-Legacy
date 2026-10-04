@@ -72,6 +72,7 @@ internal object FocusedSmokeClientHooks {
     private const val RELOAD_TOLERANCE_MS: Long = 250L
     private const val REGULAR_PROJECTILE_WAIT_MS: Long = 8_000L
     private const val GHOST_STRESS_CYCLES: Int = 6
+    private const val SCRIPTED_RELOAD_TIMEOUT_MS: Long = 15_000L
     private const val GHOST_STRESS_CYCLE_TICKS: Int = 25
     private const val EXPLOSION_WAIT_MS: Long = 15_000L
     private const val SHOOT_RETRY_INTERVAL_MS: Long = 750L
@@ -123,6 +124,7 @@ internal object FocusedSmokeClientHooks {
     private var ghostStressTick: Int = -1
     private var ghostStressClientShots: Int = 0
     private var reloadStartAmmo: Int = 0
+    private var reloadStartInventoryAmmo: Int = 0
     private var expectedReloadDurationMs: Long = 0L
     private var reloadGunId: String? = null
 
@@ -683,6 +685,7 @@ internal object FocusedSmokeClientHooks {
         // 由数据脚本 tick_reload 驱动的换弹（如逐发装填的霰弹枪）时长由脚本参数决定，无法用 feed/cooldown 推算
         reloadTimingScripted = GunScriptHooks.find(gunData, "tick_reload") != null
         reloadStartAmmo = currentAmmo
+        reloadStartInventoryAmmo = countInventoryAmmo(player, stack)
         expectedReloadDurationMs = expectedMs
         reloadGunId = iGun.getGunId(stack).toString()
         transition(
@@ -703,6 +706,23 @@ internal object FocusedSmokeClientHooks {
                 actualMs,
                 deltaMs,
             )
+            if (FocusedSmokeRuntime.realAmmoEnabled) {
+                val heldAfter = player.heldItemMainhand
+                val ammoAfter = (heldAfter.item as? IGun)?.getCurrentAmmoCount(heldAfter) ?: -1
+                val inventoryAfter = countInventoryAmmo(player, heldAfter)
+                val loaded = ammoAfter - reloadStartAmmo
+                val consumed = reloadStartInventoryAmmo - inventoryAfter
+                TACZLegacy.logger.info(
+                    "[FocusedSmoke] REAL_AMMO_RELOAD magazine={}->{} inventory={}->{}",
+                    reloadStartAmmo, ammoAfter, reloadStartInventoryAmmo, inventoryAfter,
+                )
+                // 装入弹匣的子弹必须来自背包（枪膛的一发也计入消耗）
+                if (loaded <= 0 || consumed < loaded) {
+                    FocusedSmokeRuntime.markFailure("real_ammo_reload_mismatch_loaded${loaded}_consumed${consumed}")
+                    step = Step.FAILED
+                    return
+                }
+            }
             if (reloadTimingScripted) {
                 val ammoAfter = (player.heldItemMainhand.item as? IGun)?.getCurrentAmmoCount(player.heldItemMainhand) ?: -1
                 if (ammoAfter <= reloadStartAmmo) {
@@ -721,7 +741,9 @@ internal object FocusedSmokeClientHooks {
             transition(Step.ATTEMPT_REGULAR_SHOT, "RELOAD_TIMING_OK deltaMs=$deltaMs")
             return
         }
-        if (elapsedMs() > expectedReloadDurationMs + RELOAD_TIMEOUT_PADDING_MS) {
+        // 脚本驱动的逐发装填（霰弹枪空仓换弹等）总时长与装填数量相关，给更宽的上限
+        val timeoutPaddingMs = if (reloadTimingScripted) SCRIPTED_RELOAD_TIMEOUT_MS else RELOAD_TIMEOUT_PADDING_MS
+        if (elapsedMs() > expectedReloadDurationMs + timeoutPaddingMs) {
             FocusedSmokeRuntime.markFailure("reload_timeout")
             step = Step.FAILED
         }
@@ -831,6 +853,18 @@ internal object FocusedSmokeClientHooks {
      * 客户端只有在本地判定成功时才会发送射击包，因此服务端任何非 SUCCESS 的结果都意味着
      * “客户端播放了开火动画，但服务端没有发射子弹”。
      */
+    private fun countInventoryAmmo(player: EntityPlayerSP, gun: net.minecraft.item.ItemStack): Int {
+        var total = 0
+        for (slot in 0 until player.inventory.sizeInventory) {
+            val stack = player.inventory.getStackInSlot(slot)
+            val ammo = stack.item as? com.tacz.legacy.api.item.IAmmo ?: continue
+            if (ammo.isAmmoOfGun(gun, stack)) {
+                total += stack.count
+            }
+        }
+        return total
+    }
+
     private fun handleGhostShotStress(player: EntityPlayerSP) {
         val operator = IGunOperator.fromLivingEntity(player)
         val cycle = ghostStressTick / GHOST_STRESS_CYCLE_TICKS
