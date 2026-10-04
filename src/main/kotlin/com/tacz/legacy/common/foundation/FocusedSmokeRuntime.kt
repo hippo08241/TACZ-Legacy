@@ -269,6 +269,8 @@ internal object FocusedSmokeRuntime {
     private const val TRACER_SIZE_MULTIPLIER_PROPERTY: String = "tacz.focusedSmoke.tracerSizeMultiplier"
     private const val TRACER_LENGTH_MULTIPLIER_PROPERTY: String = "tacz.focusedSmoke.tracerLengthMultiplier"
     private const val HIT_FEEDBACK_TARGET_PROPERTY: String = "tacz.focusedSmoke.hitFeedbackTarget"
+    private const val DUPLICATE_GUN_PROPERTY: String = "tacz.focusedSmoke.duplicateGun"
+    internal const val DUPLICATE_GUN_SLOT: Int = 2
 
     private val loggedKeys = ConcurrentHashMap.newKeySet<String>()
 
@@ -390,6 +392,10 @@ internal object FocusedSmokeRuntime {
 
     internal val regularShotYawOverride: Float?
         get() = System.getProperty(REGULAR_SHOT_YAW_PROPERTY)?.toFloatOrNull()
+
+    /** 在 2 号快捷栏放一把与常规枪完全相同的枪，并用它完成常规射击（回归：背包中有两把相同的枪时无法开火）。 */
+    internal val duplicateGunEnabled: Boolean
+        get() = java.lang.Boolean.getBoolean(DUPLICATE_GUN_PROPERTY)
 
     internal val hitFeedbackTargetEnabled: Boolean
         get() = System.getProperty(HIT_FEEDBACK_TARGET_PROPERTY, "false").toBoolean()
@@ -653,6 +659,20 @@ internal object FocusedSmokeRuntime {
             }
         }
         player.inventory.setInventorySlotContents(0, regularStack)
+        if (duplicateGunEnabled) {
+            // 复制品去掉 dummy 弹药，和从创造栏/工作台得到的普通枪一致
+            val duplicate = regularStack.copy()
+            duplicate.tagCompound?.removeTag(IGun.DUMMY_AMMO_TAG)
+            player.inventory.setInventorySlotContents(DUPLICATE_GUN_SLOT, duplicate)
+            // 0 号槽的枪打空（弹匣与枪膛都没有子弹），复现“同款枪打空后切到另一把同款枪”
+            (regularStack.item as? IGun)?.let { emptiedGun ->
+                emptiedGun.setCurrentAmmoCount(regularStack, 0)
+                emptiedGun.setBulletInBarrel(regularStack, false)
+                if (emptiedGun.useDummyAmmo(regularStack)) {
+                    emptiedGun.setDummyAmmoAmount(regularStack, 0)
+                }
+            }
+        }
 
         plan.explosiveGunId?.let { explosiveGunId ->
             player.inventory.setInventorySlotContents(1, createGunStack(explosiveGunId))

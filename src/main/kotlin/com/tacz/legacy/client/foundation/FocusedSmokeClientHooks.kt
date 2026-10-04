@@ -247,7 +247,7 @@ internal object FocusedSmokeClientHooks {
         if (!worldLaunchRequested && mc.currentScreen is GuiMainMenu) {
             val settings = WorldSettings(
                 System.currentTimeMillis(),
-                GameType.CREATIVE,
+                if (java.lang.Boolean.getBoolean("tacz.focusedSmoke.survival")) GameType.SURVIVAL else GameType.CREATIVE,
                 true,
                 false,
                 WorldType.FLAT,
@@ -704,7 +704,12 @@ internal object FocusedSmokeClientHooks {
             step = Step.FAILED
             return
         }
-        ensureHoldingGun(player, plan.regularGunId, preferredSlot = 0)
+        if (FocusedSmokeRuntime.duplicateGunEnabled) {
+            // 回归场景：切换到另一把完全相同的枪再开火
+            switchHotbarSlot(player, FocusedSmokeRuntime.DUPLICATE_GUN_SLOT)
+        } else {
+            ensureHoldingGun(player, plan.regularGunId, preferredSlot = 0)
+        }
         val operator = IGunOperator.fromLivingEntity(player)
         if (!holdsGun(player, plan.regularGunId) || !canAttemptShoot(operator)) {
             if (elapsedMs() > REGULAR_PROJECTILE_WAIT_MS) {
