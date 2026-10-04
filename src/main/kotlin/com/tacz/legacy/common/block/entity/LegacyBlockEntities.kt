@@ -2,6 +2,8 @@ package com.tacz.legacy.common.block.entity
 
 import com.tacz.legacy.TACZLegacy
 import com.tacz.legacy.api.DefaultAssets
+import com.tacz.legacy.common.resource.TACZGunPackPresentation
+import com.tacz.legacy.common.resource.TACZGunPackRuntimeRegistry
 import net.minecraft.item.ItemStack
 import net.minecraft.nbt.NBTTagCompound
 import net.minecraft.tileentity.TileEntity
@@ -24,6 +26,24 @@ internal object LegacyBlockEntities {
 
 internal class GunSmithTableTileEntity : TileEntity() {
     internal var blockId: ResourceLocation = DefaultAssets.DEFAULT_BLOCK_ID
+
+    /**
+     * 实际生效的工作台 ID。
+     * 未在枪包中定义的 ID（例如没有任何枪包使用的 tacz:workbench_b，或已卸载枪包的工作台）
+     * 会回退到可用的默认工作台，避免方块不可见、GUI 为空。
+     */
+    internal fun resolvedBlockId(): ResourceLocation = resolveWorkbenchBlockId(blockId)
+
+    internal companion object {
+        internal fun resolveWorkbenchBlockId(id: ResourceLocation): ResourceLocation {
+            val snapshot = TACZGunPackRuntimeRegistry.getSnapshot()
+            if (snapshot.blocks.containsKey(id)) {
+                return id
+            }
+            return TACZGunPackPresentation.sortedBlocksForItem(snapshot, id).firstOrNull()?.id
+                ?: DefaultAssets.DEFAULT_BLOCK_ID
+        }
+    }
 
     override fun readFromNBT(compound: NBTTagCompound): Unit {
         super.readFromNBT(compound)

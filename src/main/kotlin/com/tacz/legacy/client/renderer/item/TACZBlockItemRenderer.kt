@@ -40,8 +40,7 @@ internal object TACZBlockItemRenderer : TileEntityItemStackRenderer() {
         val display: BlockDisplay = TACZClientAssetManager.getBlockDisplay(displayId) ?: return
 
         val modelLocation: ResourceLocation = display.modelLocation ?: return
-        val modelData = TACZClientAssetManager.getModel(modelLocation) ?: return
-        val model = BedrockModel(modelData.pojo, modelData.version)
+        val model: BedrockModel = TACZClientAssetManager.getStaticBlockModel(modelLocation) ?: return
 
         val textureLocation: ResourceLocation = display.modelTexture ?: return
         val registeredTexture: ResourceLocation = TACZClientAssetManager.getTextureLocation(textureLocation) ?: return

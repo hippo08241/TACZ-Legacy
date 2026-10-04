@@ -16,7 +16,7 @@ internal class GunSmithTableContainer(
     private val world: World,
     val blockPos: BlockPos,
 ) : Container() {
-    val blockId: ResourceLocation = (world.getTileEntity(blockPos) as? GunSmithTableTileEntity)?.blockId ?: DefaultAssets.DEFAULT_BLOCK_ID
+    val blockId: ResourceLocation = (world.getTileEntity(blockPos) as? GunSmithTableTileEntity)?.resolvedBlockId() ?: DefaultAssets.DEFAULT_BLOCK_ID
 
     init {
         addHiddenPlayerInventory(playerInventory)
@@ -24,7 +24,7 @@ internal class GunSmithTableContainer(
 
     override fun canInteractWith(playerIn: EntityPlayer): Boolean {
         val tile = world.getTileEntity(blockPos) as? GunSmithTableTileEntity ?: return false
-        return tile.blockId == blockId && playerIn.getDistanceSq(blockPos.x + 0.5, blockPos.y + 0.5, blockPos.z + 0.5) <= 64.0
+        return tile.resolvedBlockId() == blockId && playerIn.getDistanceSq(blockPos.x + 0.5, blockPos.y + 0.5, blockPos.z + 0.5) <= 64.0
     }
 
     override fun transferStackInSlot(playerIn: EntityPlayer, index: Int): ItemStack = ItemStack.EMPTY

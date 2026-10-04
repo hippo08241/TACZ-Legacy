@@ -100,6 +100,9 @@ internal object TACZClientAssetManager {
     data class ModelData(val pojo: BedrockModelPOJO, val version: BedrockVersion)
     private val models = LinkedHashMap<ResourceLocation, ModelData>()
 
+    /** 静态方块模型（工作台等）缓存，避免每帧重新构建 BedrockModel。 */
+    private val staticBlockModels = HashMap<ResourceLocation, com.tacz.legacy.client.model.bedrock.BedrockModel>()
+
     data class ShellRenderAsset(val model: BedrockAmmoModel, val textureLocation: ResourceLocation)
 
     /** Texture ResourceLocations registered with the TextureManager, keyed by pack texture path. */
@@ -146,6 +149,12 @@ internal object TACZClientAssetManager {
     fun getAttachmentDisplay(id: ResourceLocation): AttachmentDisplay? = attachmentDisplays[id]
     fun getBlockDisplay(id: ResourceLocation): BlockDisplay? = blockDisplays[id]
     fun getModel(id: ResourceLocation): ModelData? = models[id]
+    fun getStaticBlockModel(id: ResourceLocation): com.tacz.legacy.client.model.bedrock.BedrockModel? {
+        staticBlockModels[id]?.let { return it }
+        val modelData = models[id] ?: return null
+        return com.tacz.legacy.client.model.bedrock.BedrockModel(modelData.pojo, modelData.version)
+            .also { staticBlockModels[id] = it }
+    }
     fun getTextureLocation(id: ResourceLocation): ResourceLocation? = textures[id]
     fun getGuiSlotTextureLocation(id: ResourceLocation): ResourceLocation? = guiSlotTextures[id]
     fun getAnimationFile(id: ResourceLocation): BedrockAnimationFile? = animations[id]
@@ -329,6 +338,7 @@ internal object TACZClientAssetManager {
         attachmentDisplays.clear()
         blockDisplays.clear()
         models.clear()
+        staticBlockModels.clear()
         textures.clear()
         guiSlotTextures.clear()
         animations.clear()

@@ -10,6 +10,7 @@ import com.tacz.legacy.api.item.attachment.AttachmentType
 import com.tacz.legacy.api.item.gun.FireMode
 import com.tacz.legacy.api.item.gun.GunItemManager
 import com.tacz.legacy.common.block.LegacyBlocks
+import com.tacz.legacy.common.block.LegacyGunSmithTableBlock
 import com.tacz.legacy.common.block.entity.GunSmithTableTileEntity
 import com.tacz.legacy.common.config.LegacyConfigManager
 import com.tacz.legacy.common.resource.BoltType
@@ -799,7 +800,12 @@ internal class LegacyBlockItem(block: net.minecraft.block.Block) : ItemBlock(blo
             ?.getString(BLOCK_ID_TAG)
             ?.takeIf { it.isNotBlank() }
             ?.let(::ResourceLocation)
-        return explicitBlockId ?: requireNotNull(registryName)
+        if (explicitBlockId != null) {
+            return explicitBlockId
+        }
+        val itemId = requireNotNull(registryName)
+        // 没有 BlockId 的工作台物品（例如没有任何枪包使用的 workbench_b）回退到可用的工作台定义
+        return if (block is LegacyGunSmithTableBlock) GunSmithTableTileEntity.resolveWorkbenchBlockId(itemId) else itemId
     }
 
     fun setBlockId(stack: ItemStack, blockId: ResourceLocation?) {

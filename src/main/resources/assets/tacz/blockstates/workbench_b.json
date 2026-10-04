@@ -1,6 +1,15 @@
 {
   "variants": {
-    "normal": {
+    "facing=north": {
+      "model": "tacz:gun_smith_table"
+    },
+    "facing=south": {
+      "model": "tacz:gun_smith_table"
+    },
+    "facing=west": {
+      "model": "tacz:gun_smith_table"
+    },
+    "facing=east": {
       "model": "tacz:gun_smith_table"
     }
   }
