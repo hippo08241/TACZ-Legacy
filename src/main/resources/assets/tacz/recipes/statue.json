@@ -10,13 +10,15 @@
   ],
   "key": {
     "_": {
-      "item": "minecraft:quartz_slab"
+      "item": "minecraft:stone_slab",
+      "data": 7
     },
     "Q": {
       "item": "minecraft:quartz_stairs"
     },
     "C": {
-      "item": "minecraft:chiseled_quartz_block"
+      "item": "minecraft:quartz_block",
+      "data": 1
     }
   }
 }

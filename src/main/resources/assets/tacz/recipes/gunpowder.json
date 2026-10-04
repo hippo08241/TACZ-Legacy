@@ -15,13 +15,16 @@
       "item": "minecraft:sugar"
     },
     {
-      "item": "minecraft:charcoal"
+      "item": "minecraft:coal",
+      "data": 1
     },
     {
-      "item": "minecraft:charcoal"
+      "item": "minecraft:coal",
+      "data": 1
     },
     {
-      "item": "minecraft:charcoal"
+      "item": "minecraft:coal",
+      "data": 1
     }
   ]
 }

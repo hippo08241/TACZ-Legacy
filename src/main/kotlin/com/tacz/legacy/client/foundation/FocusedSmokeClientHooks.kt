@@ -645,10 +645,12 @@ internal object FocusedSmokeClientHooks {
         }
         val currentAmmo = iGun.getCurrentAmmoCount(stack)
         val emptyReload = currentAmmo <= 0 && !iGun.hasBulletInBarrel(stack)
+        // 与 LivingEntityReload.defaultTickReload / 上游 TACZ 一致：cooldown 是从换弹开始计算的累计时间，
+        // 换弹总时长为 max(feed, cooldown)，而不是两者之和
         val expectedMs = if (emptyReload) {
-            ((gunData.emptyReloadFeedingTimeS + gunData.emptyReloadFinishingTimeS) * 1000.0).toLong()
+            (maxOf(gunData.emptyReloadFeedingTimeS, gunData.emptyReloadFinishingTimeS) * 1000.0).toLong()
         } else {
-            ((gunData.reloadFeedingTimeS + gunData.reloadFinishingTimeS) * 1000.0).toLong()
+            (maxOf(gunData.reloadFeedingTimeS, gunData.reloadFinishingTimeS) * 1000.0).toLong()
         }
         val before = operator.getSynReloadState().stateType
         operator.reload()
