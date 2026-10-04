@@ -96,6 +96,8 @@ internal object FocusedSmokeClientHooks {
         ATTEMPT_REGULAR_SHOT,
         WAIT_REGULAR_PROJECTILE,
         GHOST_SHOT_STRESS,
+        CRAFT_OPEN,
+        CRAFT_WAIT,
         SWITCH_EXPLOSIVE,
         ATTEMPT_EXPLOSIVE_SHOT,
         WAIT_EXPLOSION,
@@ -122,6 +124,10 @@ internal object FocusedSmokeClientHooks {
     private var reloadStartedAtMs: Long = 0L
     private var reloadTimingScripted: Boolean = false
     private var ghostStressTick: Int = -1
+    private var craftState: Int = 0
+    private var craftGuiOpenedAtMs: Long = 0L
+    private var craftResultBefore: Int = 0
+    private var craftMaterialBefore: Int = 0
     private var ghostStressClientShots: Int = 0
     private var reloadStartAmmo: Int = 0
     private var reloadStartInventoryAmmo: Int = 0
@@ -178,6 +184,8 @@ internal object FocusedSmokeClientHooks {
             Step.ATTEMPT_REGULAR_SHOT -> handleAttemptRegularShot(player)
             Step.WAIT_REGULAR_PROJECTILE -> handleWaitRegularProjectile()
             Step.GHOST_SHOT_STRESS -> handleGhostShotStress(player)
+            Step.CRAFT_OPEN -> handleCraftOpen(player)
+            Step.CRAFT_WAIT -> handleCraftWait(player)
             Step.SWITCH_EXPLOSIVE -> handleSwitchExplosive(player)
             Step.ATTEMPT_EXPLOSIVE_SHOT -> handleAttemptExplosiveShot(player)
             Step.WAIT_EXPLOSION -> handleWaitExplosion()
@@ -822,6 +830,11 @@ internal object FocusedSmokeClientHooks {
             FocusedSmokeRuntime.hasObservedExpectedRegularFireCount() &&
             FocusedSmokeRuntime.hitTargetSatisfied()
         ) {
+            if (FocusedSmokeRuntime.craftEnabled && craftState == 0) {
+                craftState = 1
+                transition(Step.CRAFT_OPEN, "CRAFT_BEGIN pos=${FocusedSmokeRuntime.craftTablePos}")
+                return
+            }
             if (FocusedSmokeRuntime.ghostShotStressEnabled && ghostStressTick < 0) {
                 ghostStressTick = 0
                 transition(Step.GHOST_SHOT_STRESS, "GHOST_STRESS_BEGIN cycles=$GHOST_STRESS_CYCLES")
@@ -853,6 +866,89 @@ internal object FocusedSmokeClientHooks {
      * 客户端只有在本地判定成功时才会发送射击包，因此服务端任何非 SUCCESS 的结果都意味着
      * “客户端播放了开火动画，但服务端没有发射子弹”。
      */
+    private fun countMatching(player: EntityPlayerSP, template: net.minecraft.item.ItemStack): Int {
+        var total = 0
+        for (slot in 0 until player.inventory.sizeInventory) {
+            val stack = player.inventory.getStackInSlot(slot)
+            if (net.minecraft.item.ItemStack.areItemsEqual(stack, template) && net.minecraft.item.ItemStack.areItemStackTagsEqual(stack, template)) {
+                total += stack.count
+            }
+        }
+        return total
+    }
+
+    private fun handleCraftOpen(player: EntityPlayerSP) {
+        val mc = Minecraft.getMinecraft()
+        val pos = FocusedSmokeRuntime.craftTablePos
+        val recipe = FocusedSmokeRuntime.craftRecipe
+        if (pos == null || recipe == null) {
+            FocusedSmokeRuntime.markFailure("craft_not_prepared")
+            step = Step.FAILED
+            return
+        }
+        val container = player.openContainer as? com.tacz.legacy.common.inventory.GunSmithTableContainer
+        if (container != null && mc.currentScreen is com.tacz.legacy.client.gui.GunSmithTableScreen) {
+            // 截图用：可通过 tacz.focusedSmoke.craftHoldMs 让工作台界面保持打开一段时间
+            val holdMs = System.getProperty("tacz.focusedSmoke.craftHoldMs")?.toLongOrNull() ?: 0L
+            if (craftGuiOpenedAtMs == 0L) {
+                craftGuiOpenedAtMs = System.currentTimeMillis()
+                TACZLegacy.logger.info("[FocusedSmoke] CRAFT_GUI_OPEN holdMs={}", holdMs)
+            }
+            if (System.currentTimeMillis() - craftGuiOpenedAtMs < holdMs) {
+                return
+            }
+            craftResultBefore = countMatching(player, recipe.result)
+            craftMaterialBefore = recipe.materials.first().ingredient.matchingStacks.first().let { countMatching(player, it) }
+            TACZNetworkHandler.sendToServer(com.tacz.legacy.common.network.message.client.ClientMessageGunSmithCraft(container.windowId, recipe.id))
+            transition(Step.CRAFT_WAIT, "CRAFT_REQUEST_SENT recipe=${recipe.id} window=${container.windowId} blockId=${container.blockId}")
+            return
+        }
+        if (keepAliveGuiActive || mc.currentScreen is GuiChat) {
+            mc.displayGuiScreen(null)
+            keepAliveGuiActive = false
+        }
+        // 截图用：俯视模式下先停留几秒再打开工作台界面
+        if (java.lang.Boolean.getBoolean("tacz.focusedSmoke.topDownView") && elapsedMs() < 5_000L) {
+            return
+        }
+        if (System.currentTimeMillis() - lastShootAttemptAtMs >= 1000L) {
+            lastShootAttemptAtMs = System.currentTimeMillis()
+            val hit = net.minecraft.util.math.Vec3d(pos.x + 0.5, pos.y + 1.0, pos.z + 0.5)
+            val result = mc.playerController.processRightClickBlock(player, mc.world, pos, net.minecraft.util.EnumFacing.UP, hit, net.minecraft.util.EnumHand.MAIN_HAND)
+            TACZLegacy.logger.info("[FocusedSmoke] CRAFT_RIGHT_CLICK result={}", result)
+        }
+        if (elapsedMs() > 10_000L) {
+            FocusedSmokeRuntime.markFailure("craft_gui_not_opened")
+            step = Step.FAILED
+        }
+    }
+
+    private fun handleCraftWait(player: EntityPlayerSP) {
+        val recipe = FocusedSmokeRuntime.craftRecipe ?: return
+        val resultNow = countMatching(player, recipe.result)
+        val materialNow = recipe.materials.first().ingredient.matchingStacks.first().let { countMatching(player, it) }
+        if (resultNow > craftResultBefore) {
+            TACZLegacy.logger.info(
+                "[FocusedSmoke] CRAFT_COMPLETED result={}->{} firstMaterial={}->{}",
+                craftResultBefore, resultNow, craftMaterialBefore, materialNow,
+            )
+            if (!player.capabilities.isCreativeMode && materialNow >= craftMaterialBefore) {
+                FocusedSmokeRuntime.markFailure("craft_material_not_consumed")
+                step = Step.FAILED
+                return
+            }
+            player.closeScreen()
+            craftState = 2
+            FocusedSmokeRuntime.notifyCraftCompleted()
+            transition(Step.WAIT_REGULAR_PROJECTILE, "CRAFT_DONE")
+            return
+        }
+        if (elapsedMs() > 8_000L) {
+            FocusedSmokeRuntime.markFailure("craft_result_missing")
+            step = Step.FAILED
+        }
+    }
+
     private fun countInventoryAmmo(player: EntityPlayerSP, gun: net.minecraft.item.ItemStack): Int {
         var total = 0
         for (slot in 0 until player.inventory.sizeInventory) {

@@ -277,6 +277,7 @@ internal object FocusedSmokeRuntime {
     private const val GHOST_STRESS_PROPERTY: String = "tacz.focusedSmoke.ghostShotStress"
     private const val REAL_AMMO_PROPERTY: String = "tacz.focusedSmoke.realAmmo"
     private const val EMPTY_START_PROPERTY: String = "tacz.focusedSmoke.emptyStart"
+    private const val CRAFT_PROPERTY: String = "tacz.focusedSmoke.craft"
     internal const val REAL_AMMO_FIRST_SLOT: Int = 9
     internal const val GHOST_STRESS_GUN_SLOT: Int = 3
 
@@ -429,6 +430,24 @@ internal object FocusedSmokeRuntime {
         get() = java.lang.Boolean.getBoolean(REAL_AMMO_PROPERTY)
 
     /** 常规枪以完全打空（弹匣 0、枪膛无弹）的状态开始，验证空仓换弹 */
+    /** 放置枪械工作台、通过真实 GUI/网络流程制作一把枪，验证材料消耗与成品发放 */
+    internal val craftEnabled: Boolean
+        get() = java.lang.Boolean.getBoolean(CRAFT_PROPERTY)
+
+    @Volatile
+    internal var craftTablePos: net.minecraft.util.math.BlockPos? = null
+        private set
+    @Volatile
+    internal var craftRecipe: com.tacz.legacy.common.application.gunsmith.LegacyGunSmithRecipe? = null
+        private set
+    @Volatile
+    private var craftCompleted: Boolean = false
+
+    internal fun notifyCraftCompleted() {
+        craftCompleted = true
+        maybeLogPass()
+    }
+
     internal val emptyStartEnabled: Boolean
         get() = java.lang.Boolean.getBoolean(EMPTY_START_PROPERTY)
 
@@ -664,6 +683,9 @@ internal object FocusedSmokeRuntime {
         if (ghostShotStressEnabled && !ghostStressCompleted) {
             return
         }
+        if (craftEnabled && !craftCompleted) {
+            return
+        }
         if (requireTracerFrameEnabled && !tracerFrameObserved) {
             return
         }
@@ -702,6 +724,9 @@ internal object FocusedSmokeRuntime {
             }
         }
         player.inventory.setInventorySlotContents(0, regularStack)
+        if (craftEnabled) {
+            prepareCraftScenario(player)
+        }
         if (emptyStartEnabled) {
             (regularStack.item as? IGun)?.let { gun ->
                 gun.setCurrentAmmoCount(regularStack, 0)
@@ -756,6 +781,54 @@ internal object FocusedSmokeRuntime {
             "server-gear-ready",
             "SERVER_GEAR_READY regularGun=${plan.regularGunId} explosiveGun=${plan.explosiveGunId ?: "none"} attachment=$attachmentText"
         )
+    }
+
+    private fun prepareCraftScenario(player: EntityPlayerMP) {
+        val blockId = com.tacz.legacy.api.DefaultAssets.DEFAULT_BLOCK_ID
+        val recipe = com.tacz.legacy.common.application.gunsmith.LegacyGunSmithingRuntime.visibleRecipes(
+            blockId = blockId,
+            selectedTab = null,
+            selectedNamespaces = emptySet(),
+            searchText = "",
+            heldStack = ItemStack.EMPTY,
+            byHandOnly = false,
+        ).firstOrNull { candidate ->
+            candidate.result.item is IGun && candidate.materials.isNotEmpty() &&
+                candidate.materials.all { it.ingredient.matchingStacks.isNotEmpty() }
+        }
+        if (recipe == null) {
+            markFailure("craft_no_recipe")
+            return
+        }
+        // 发放刚好够用的材料
+        recipe.materials.forEach { material ->
+            var remaining = material.count
+            val template = material.ingredient.matchingStacks.first()
+            while (remaining > 0) {
+                val give = template.copy()
+                give.count = minOf(remaining, give.maxStackSize)
+                remaining -= give.count
+                player.inventory.addItemStackToInventory(give)
+            }
+        }
+        val look = player.horizontalFacing
+        val pos = player.position.offset(look, 2)
+        // 与玩家手动放置相同：通过 getStateForPlacement 决定朝向
+        val block = com.tacz.legacy.common.block.LegacyBlocks.GUN_SMITH_TABLE
+        val placedState = block.getStateForPlacement(
+            player.serverWorld, pos, net.minecraft.util.EnumFacing.UP, 0.5f, 1.0f, 0.5f, 0, player, net.minecraft.util.EnumHand.MAIN_HAND,
+        )
+        player.serverWorld.setBlockState(pos, placedState)
+        if (java.lang.Boolean.getBoolean("tacz.focusedSmoke.topDownView")) {
+            // 截图用：把玩家移到工作台正上方，面朝南并垂直向下看（屏幕上方 = 南）
+            player.connection.setPlayerLocation(pos.x + 0.5, pos.y + 7.0, pos.z + 0.5, 0.0f, 90.0f)
+            player.capabilities.isFlying = true
+            player.sendPlayerAbilities()
+        }
+        log("CRAFT_TABLE_PLACED facing=${placedState.getValue(com.tacz.legacy.common.block.LegacyGunSmithTableBlock.FACING)} playerFacing=${player.horizontalFacing}")
+        craftTablePos = pos
+        craftRecipe = recipe
+        log("CRAFT_READY recipe=${recipe.id} result=${(recipe.result.item as IGun).getGunId(recipe.result)} materials=${recipe.materials.size} pos=$pos")
     }
 
     private fun logCaptureOverrides() {
