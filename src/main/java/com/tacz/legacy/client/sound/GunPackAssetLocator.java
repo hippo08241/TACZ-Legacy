@@ -77,7 +77,14 @@ public final class GunPackAssetLocator {
                 zipFile.close();
                 continue;
             }
-            InputStream delegate = zipFile.getInputStream(entry);
+            InputStream delegate;
+            try {
+                delegate = zipFile.getInputStream(entry);
+            } catch (IOException | RuntimeException e) {
+                // 打开条目失败时也要关闭 ZipFile，否则文件句柄泄漏
+                zipFile.close();
+                throw e;
+            }
             return new FilterInputStream(delegate) {
                 @Override
                 public void close() throws IOException {
