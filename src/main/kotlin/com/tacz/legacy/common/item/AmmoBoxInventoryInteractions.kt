@@ -23,7 +23,7 @@ internal object AmmoBoxInventoryInteractions {
         clickType: ClickType,
         player: EntityPlayer,
     ): Boolean {
-        if (clickType != ClickType.PICKUP || dragType != 1 || slotId < 0) {
+        if (clickType != ClickType.PICKUP || dragType != 1 || slotId < 0 || slotId >= container.inventorySlots.size) {
             return false
         }
         val slot = container.getSlot(slotId) ?: return false
