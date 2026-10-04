@@ -16,7 +16,7 @@ import java.util.Map;
 @IFMLLoadingPlugin.Name("TACZLegacyMixinLoader")
 @IFMLLoadingPlugin.MCVersion("1.12.2")
 @IFMLLoadingPlugin.SortingIndex(0)
-@IFMLLoadingPlugin.TransformerExclusions({"com.tacz.legacy.mixin"})
+@IFMLLoadingPlugin.TransformerExclusions({"com.tacz.legacy.mixin.TACZMixinLoader"})
 @SuppressWarnings("unused")
 public class TACZMixinLoader implements IFMLLoadingPlugin {
 
