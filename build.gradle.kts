@@ -183,6 +183,8 @@ dependencies {
     implementation(rfg.deobf("curse.maven:codechickenlib-242818:2779848"))
     
     compileOnly(rfg.deobf("curse.maven:mouse-tweaks-461660:5876158"))
+    // JEI/HEI 兼容（可选依赖，仅编译期使用 API）
+    compileOnly(rfg.deobf("curse.maven:had-enough-items-557549:4543375"))
 
     testImplementation("junit:junit:4.13.2")
 
