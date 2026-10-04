@@ -1,6 +1,8 @@
 package com.tacz.legacy.api.client.animation.statemachine;
 
+import com.tacz.legacy.TACZLegacy;
 import com.tacz.legacy.api.client.animation.AnimationController;
+import org.luaj.vm2.LuaError;
 import org.luaj.vm2.LuaFunction;
 import org.luaj.vm2.LuaTable;
 import org.luaj.vm2.LuaValue;
@@ -24,12 +26,20 @@ public class LuaStateMachineFactory<T extends AnimationStateContext> {
         final LuaFunction exitF = this.exitFunc;
         stateMachine.initializeFunc = (context) -> {
             if (initF != null) {
-                initF.call(t, CoerceJavaToLua.coerce(context));
+                try {
+                    initF.call(t, CoerceJavaToLua.coerce(context));
+                } catch (LuaError e) {
+                    TACZLegacy.logger.error("Gun animation state machine script failed in 'initialize'", e);
+                }
             }
         };
         stateMachine.exitFunc = (context) -> {
             if (exitF != null) {
-                exitF.call(t, CoerceJavaToLua.coerce(context));
+                try {
+                    exitF.call(t, CoerceJavaToLua.coerce(context));
+                } catch (LuaError e) {
+                    TACZLegacy.logger.error("Gun animation state machine script failed in 'exit'", e);
+                }
             }
         };
         stateMachine.setStatesSupplier(getStatesSupplier());

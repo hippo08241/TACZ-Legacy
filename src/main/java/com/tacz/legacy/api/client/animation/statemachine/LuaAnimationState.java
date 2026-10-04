@@ -1,12 +1,16 @@
 package com.tacz.legacy.api.client.animation.statemachine;
 
+import com.tacz.legacy.TACZLegacy;
 import org.luaj.vm2.*;
 import org.luaj.vm2.lib.jse.CoerceJavaToLua;
 
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class LuaAnimationState<T extends AnimationStateContext> implements AnimationState<T> {
+    private static final Set<String> REPORTED_ERRORS = ConcurrentHashMap.newKeySet();
     private final @Nonnull LuaTable stateTable;
     private final @Nonnull LuaTable scriptTable;
     private final @Nullable LuaFunction updateFunction;
@@ -26,21 +30,33 @@ public class LuaAnimationState<T extends AnimationStateContext> implements Anima
     @Override
     public void update(T context) {
         if (updateFunction != null) {
-            updateFunction.call(scriptTable, CoerceJavaToLua.coerce(context));
+            try {
+                updateFunction.call(scriptTable, CoerceJavaToLua.coerce(context));
+            } catch (LuaError e) {
+                reportError("update", e);
+            }
         }
     }
 
     @Override
     public void entryAction(T context) {
         if (enterFunction != null) {
-            enterFunction.call(scriptTable, CoerceJavaToLua.coerce(context));
+            try {
+                enterFunction.call(scriptTable, CoerceJavaToLua.coerce(context));
+            } catch (LuaError e) {
+                reportError("entry", e);
+            }
         }
     }
 
     @Override
     public void exitAction(T context) {
         if (exitFunction != null) {
-            exitFunction.call(scriptTable, CoerceJavaToLua.coerce(context));
+            try {
+                exitFunction.call(scriptTable, CoerceJavaToLua.coerce(context));
+            } catch (LuaError e) {
+                reportError("exit", e);
+            }
         }
     }
 
@@ -48,15 +64,32 @@ public class LuaAnimationState<T extends AnimationStateContext> implements Anima
     public AnimationState<T> transition(T context, String condition) {
         if (transitionFunction != null) {
             LuaString conditionToLua = LuaString.valueOf(condition);
-            LuaValue nextStateTable = transitionFunction.call(scriptTable, CoerceJavaToLua.coerce(context), conditionToLua);
+            LuaValue nextStateTable;
+            try {
+                nextStateTable = transitionFunction.call(scriptTable, CoerceJavaToLua.coerce(context), conditionToLua);
+            } catch (LuaError e) {
+                reportError("transition", e);
+                return null;
+            }
             if (nextStateTable.istable()) {
                 return new LuaAnimationState<>((LuaTable) nextStateTable, scriptTable);
             } else if (nextStateTable.isnil()) {
                 return null;
             }
-            throw new LuaError("the return of function 'transition' must be table or nil");
+            reportError("transition", new LuaError("the return of function 'transition' must be table or nil"));
         }
         return null;
+    }
+
+    /**
+     * 枪包状态机脚本出错时只记录一次日志并跳过本次调用。
+     * 原实现直接抛出 LuaError，会沿渲染/输入流程向上传播导致客户端崩溃。
+     */
+    private void reportError(String functionName, LuaError error) {
+        String key = System.identityHashCode(scriptTable) + "#" + functionName + "#" + error.getMessage();
+        if (REPORTED_ERRORS.add(key)) {
+            TACZLegacy.logger.error("Gun animation state machine script failed in '{}'", functionName, error);
+        }
     }
 
     private LuaFunction checkLuaFunction(String funcName) {
