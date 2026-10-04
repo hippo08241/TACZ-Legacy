@@ -706,6 +706,11 @@ internal class EntityKineticBullet : EntityThrowable, IEntityAdditionalSpawnData
         if (knockback <= 0.0f) {
             return
         }
+        // 与上游 TACZ 一致：额外击退只作用于 LivingEntity（上游通过 KnockBackModifier 修改 LivingEntity.knockback）。
+        // 矿车、船等非生物实体几乎没有阻力，直接叠加速度会被打飞。
+        if (target !is EntityLivingBase) {
+            return
+        }
         val horizontalSpeed = sqrt(motionX * motionX + motionZ * motionZ)
         if (horizontalSpeed <= 1.0E-6) {
             return
@@ -713,14 +718,11 @@ internal class EntityKineticBullet : EntityThrowable, IEntityAdditionalSpawnData
         val normX = motionX / horizontalSpeed
         val normZ = motionZ / horizontalSpeed
 
-        var effectiveKnockback = knockback
-        if (target is EntityLivingBase) {
-            val resistance = target.getEntityAttribute(SharedMonsterAttributes.KNOCKBACK_RESISTANCE).attributeValue
-            if (resistance >= 1.0) {
-                return
-            }
-            effectiveKnockback = (knockback * (1.0 - resistance)).toFloat()
+        val resistance = target.getEntityAttribute(SharedMonsterAttributes.KNOCKBACK_RESISTANCE)?.attributeValue ?: 0.0
+        if (resistance >= 1.0) {
+            return
         }
+        val effectiveKnockback = (knockback * (1.0 - resistance)).toFloat()
 
         target.addVelocity(normX * effectiveKnockback * 0.6, 0.1, normZ * effectiveKnockback * 0.6)
         target.velocityChanged = true
