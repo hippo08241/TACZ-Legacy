@@ -46,8 +46,12 @@ public class ClientMessageGunSmithCraft() : IMessage, IMessageHandler<ClientMess
     }
 
     private companion object {
+        const val MAX_STRING_BYTES: Int = 32767
+
         fun readString(buf: ByteBuf): String {
             val length = buf.readInt()
+            // 来自客户端的长度不可信：限制长度，防止超大分配导致服务端内存溢出
+            require(length in 0..minOf(MAX_STRING_BYTES, buf.readableBytes())) { "Invalid string length: $length" }
             val bytes = ByteArray(length)
             buf.readBytes(bytes)
             return String(bytes, StandardCharsets.UTF_8)
