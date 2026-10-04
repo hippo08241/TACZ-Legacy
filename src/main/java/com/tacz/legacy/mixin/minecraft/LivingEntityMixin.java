@@ -154,6 +154,17 @@ public abstract class LivingEntityMixin implements IGunOperator, KnockBackModifi
 
     @Override
     public ShootResult shoot(Supplier<Float> pitch, Supplier<Float> yaw, long timestamp) {
+        EntityLivingBase self = (EntityLivingBase) (Object) this;
+        if (!self.world.isRemote) {
+            // 换弹/拉栓状态按服务端 tick 推进，而客户端在本地时间到达时就会结束并立刻开火。
+            // 在处理射击请求前按当前时间推进一次状态，避免换弹刚结束的第一发被判定为 IS_RELOADING 而被吞掉。
+            if (tacz$dataHolder.reloadStateType.isReloading()) {
+                tacz$reload.tickReload();
+            }
+            if (tacz$dataHolder.isBolting) {
+                tacz$bolt.tickBolt();
+            }
+        }
         return tacz$shoot.shoot(pitch, yaw, timestamp);
     }
 
