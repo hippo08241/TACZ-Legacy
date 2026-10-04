@@ -103,14 +103,15 @@ internal object AmmoBoxInventoryInteractions {
         if (slotAmmoId == DefaultAssets.EMPTY_AMMO_ID) {
             return false
         }
-        var boxAmmoId = boxItem.getAmmoId(ammoBox)
-        if (boxAmmoId == DefaultAssets.EMPTY_AMMO_ID) {
-            boxItem.setAmmoId(ammoBox, slotAmmoId)
-            boxAmmoId = slotAmmoId
-        } else if (slotAmmoId != boxAmmoId) {
+        val boxAmmoId = boxItem.getAmmoId(ammoBox)
+        if (boxAmmoId != DefaultAssets.EMPTY_AMMO_ID && slotAmmoId != boxAmmoId) {
             return false
         }
+        // 先确认弹药定义存在再写入弹药盒类型，避免失败时空弹药盒被错误绑定类型
         val ammoDef = TACZGunPackRuntimeRegistry.getSnapshot().ammos[slotAmmoId] ?: return false
+        if (boxAmmoId == DefaultAssets.EMPTY_AMMO_ID) {
+            boxItem.setAmmoId(ammoBox, slotAmmoId)
+        }
         if (boxItem.isCreative(ammoBox)) {
             boxItem.setAmmoCount(ammoBox, Int.MAX_VALUE)
             slot.onSlotChanged()
@@ -184,14 +185,15 @@ internal object AmmoBoxInventoryInteractions {
         if (cursorAmmoId == DefaultAssets.EMPTY_AMMO_ID) {
             return false
         }
-        var boxAmmoId = boxItem.getAmmoId(ammoBox)
-        if (boxAmmoId == DefaultAssets.EMPTY_AMMO_ID) {
-            boxItem.setAmmoId(ammoBox, cursorAmmoId)
-            boxAmmoId = cursorAmmoId
-        } else if (cursorAmmoId != boxAmmoId) {
+        val boxAmmoId = boxItem.getAmmoId(ammoBox)
+        if (boxAmmoId != DefaultAssets.EMPTY_AMMO_ID && cursorAmmoId != boxAmmoId) {
             return false
         }
+        // 先确认弹药定义存在再写入弹药盒类型，避免失败时空弹药盒被错误绑定类型
         val ammoDef = TACZGunPackRuntimeRegistry.getSnapshot().ammos[cursorAmmoId] ?: return false
+        if (boxAmmoId == DefaultAssets.EMPTY_AMMO_ID) {
+            boxItem.setAmmoId(ammoBox, cursorAmmoId)
+        }
         if (boxItem.isCreative(ammoBox)) {
             boxItem.setAmmoCount(ammoBox, Int.MAX_VALUE)
             slot.onSlotChanged()
