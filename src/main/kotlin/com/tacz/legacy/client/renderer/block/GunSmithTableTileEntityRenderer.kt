@@ -50,7 +50,7 @@ internal class GunSmithTableTileEntityRenderer : TileEntitySpecialRenderer<GunSm
         GlStateManager.translate(x.toFloat() + 0.5f, y.toFloat() + 1.5f, z.toFloat() + 0.5f)
         GlStateManager.rotate(180f, 0f, 0f, 1f)
         // 与上游 GunSmithTableRenderer 一致：根据方块朝向旋转模型
-        GlStateManager.rotate(90f - resolveFacing(te).horizontalIndex * 90f, 0f, 1f, 0f)
+        GlStateManager.rotate(-resolveFacing(te).horizontalIndex * 90f, 0f, 1f, 0f)
 
         GlStateManager.enableLighting()
         GlStateManager.enableRescaleNormal()
