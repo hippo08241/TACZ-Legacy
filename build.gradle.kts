@@ -39,6 +39,7 @@ val mod_id: String by project
 val mod_name: String by project
 @Suppress("PropertyName")
 val archives_base_name: String by project
+val mod_authors: String by project
 
 @Suppress("PropertyName")
 val forgelin_continuous_version: String by project
@@ -59,6 +60,11 @@ val include_mod: String by project
 val coremod_plugin_class_name: String by project
 
 version = mod_version
+
+// jar 파일 이름을 폴더 이름이 아닌 설정값(TACZ-Legacy)으로 고정
+base {
+    archivesName.set(archives_base_name)
+}
 
 java {
     toolchain {
@@ -226,13 +232,14 @@ if (use_access_transformer.toBoolean()) {
 tasks.withType<ProcessResources> {
     // This will ensure that this task is redone when the versions change
     inputs.property("version", mod_version)
-    inputs.property("mcversion", minecraft.mcVersion)
+    inputs.property("mcversion", minecraft.mcVersion.get())
 
     // Replace various properties in mcmod.info and pack.mcmeta if applicable
     filesMatching(arrayListOf("mcmod.info", "pack.mcmeta")) {
         expand(
             "version" to mod_version,
-            "mcversion" to minecraft.mcVersion
+            // Property 객체를 그대로 넘기면 "extension 'minecraft' property 'mcVersion'" 문자열이 들어간다
+            "mcversion" to minecraft.mcVersion.get()
         )
     }
 
@@ -257,6 +264,13 @@ tasks.withType<Jar> {
         if (use_mixins.toBoolean()) {
             attributeMap["MixinConfigs"] = "mixins.${mod_id}.json"
         }
+        // jar 속성(버전/공급자)에 표시되는 정보
+        attributeMap["Implementation-Title"] = mod_name
+        attributeMap["Implementation-Version"] = mod_version
+        attributeMap["Implementation-Vendor"] = mod_authors
+        attributeMap["Specification-Title"] = mod_id
+        attributeMap["Specification-Version"] = mod_version
+        attributeMap["Specification-Vendor"] = mod_authors
         attributes(attributeMap)
     }
 }
