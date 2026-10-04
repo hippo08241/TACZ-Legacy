@@ -63,6 +63,10 @@ internal class GunSmithTableScreen(
     }
 
     override fun initGui() {
+        if (handlingClick) {
+            pendingInit = true
+            return
+        }
         val previousSearch = if (this::searchField.isInitialized) searchField.text else ""
         super.initGui()
         Keyboard.enableRepeatEvents(true)
@@ -121,7 +125,31 @@ internal class GunSmithTableScreen(
 
     override fun mouseClicked(mouseX: Int, mouseY: Int, mouseButton: Int) {
         searchField.mouseClicked(mouseX, mouseY, mouseButton)
-        super.mouseClicked(mouseX, mouseY, mouseButton)
+        // 原版 GuiScreen.mouseClicked 在 actionPerformed 后不会 break，若在点击过程中重建按钮，
+        // 同一位置新生成的按钮（例如“下一页”）会被同一次点击再次触发，导致直接翻到最后一页。
+        // 因此点击期间推迟重建，等遍历结束后再统一执行。
+        handlingClick = true
+        try {
+            super.mouseClicked(mouseX, mouseY, mouseButton)
+        } finally {
+            handlingClick = false
+        }
+        flushPendingRebuild()
+    }
+
+    private var handlingClick: Boolean = false
+    private var pendingInit: Boolean = false
+    private var pendingRebuild: Boolean = false
+
+    private fun flushPendingRebuild() {
+        if (pendingInit) {
+            pendingInit = false
+            pendingRebuild = false
+            initGui()
+        } else if (pendingRebuild) {
+            pendingRebuild = false
+            rebuildWidgets()
+        }
     }
 
     override fun actionPerformed(button: GuiButton) {
@@ -329,6 +357,10 @@ internal class GunSmithTableScreen(
     }
 
     private fun rebuildWidgets() {
+        if (handlingClick) {
+            pendingRebuild = true
+            return
+        }
         buttonList.clear()
         labelList.clear()
         tabButtons.clear()

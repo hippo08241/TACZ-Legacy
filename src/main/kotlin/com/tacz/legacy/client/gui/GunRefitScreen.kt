@@ -77,6 +77,11 @@ internal class GunRefitScreen : GuiScreen() {
 	}
 
 	override fun initGui() {
+		if (handlingClick) {
+			// 点击处理期间推迟重建，见 mouseClicked
+			pendingInit = true
+			return
+		}
 		super.initGui()
 		buttonList.clear()
 		slotButtons.clear()
@@ -103,6 +108,26 @@ internal class GunRefitScreen : GuiScreen() {
 	}
 
 	override fun doesGuiPauseGame(): Boolean = false
+
+	private var handlingClick: Boolean = false
+	private var pendingInit: Boolean = false
+
+	override fun mouseClicked(mouseX: Int, mouseY: Int, mouseButton: Int) {
+		// 原版 GuiScreen.mouseClicked 在 actionPerformed 后不会 break。若在遍历按钮时调用 initGui 重建按钮，
+		// 新生成在同一位置的“下一页”按钮会被同一次点击连续触发，导致直接跳到最后一页。
+		handlingClick = true
+		try {
+			super.mouseClicked(mouseX, mouseY, mouseButton)
+		} finally {
+			handlingClick = false
+		}
+		if (pendingInit) {
+			pendingInit = false
+			if (mc.currentScreen === this) {
+				initGui()
+			}
+		}
+	}
 
 	override fun updateScreen() {
 		super.updateScreen()
