@@ -3,12 +3,11 @@ package com.tacz.legacy.common.entity.shooter
 import com.tacz.legacy.api.entity.IGunOperator
 import com.tacz.legacy.api.entity.ReloadState
 import com.tacz.legacy.api.event.GunReloadEvent
-import com.tacz.legacy.api.item.IGun
+import com.tacz.legacy.common.application.refit.LegacyGunRefitRuntime
 import com.tacz.legacy.common.network.TACZNetworkHandler
 import com.tacz.legacy.common.network.message.event.ServerMessageReload
 import com.tacz.legacy.common.resource.BoltType
 import com.tacz.legacy.common.resource.GunCombatData
-import com.tacz.legacy.common.resource.GunDataAccessor
 import net.minecraft.entity.EntityLivingBase
 import net.minecraftforge.common.MinecraftForge
 import net.minecraftforge.fml.relauncher.Side
@@ -28,11 +27,10 @@ public class LivingEntityReload(
      * 发起换弹操作。
      */
     public fun reload() {
-        val supplier = data.currentGunItem ?: return
-        val currentGunItem = supplier.get()
-        val iGun = currentGunItem.item as? IGun ?: return
-        val gunId = iGun.getGunId(currentGunItem)
-        val gunData = GunDataAccessor.getGunData(gunId) ?: return
+        val held = data.heldGun() ?: return
+        val currentGunItem = held.stack
+        val iGun = held.iGun
+        val gunData = held.gunData
 
         // 已经在换弹中
         if (data.reloadStateType.isReloading()) return
@@ -45,7 +43,7 @@ public class LivingEntityReload(
         val hasBulletInBarrel = iGun.hasBulletInBarrel(currentGunItem)
 
         // 满弹判定
-        val maxAmmo = com.tacz.legacy.common.application.refit.LegacyGunRefitRuntime.computeAmmoCapacity(currentGunItem)
+        val maxAmmo = LegacyGunRefitRuntime.computeAmmoCapacity(currentGunItem)
         val isBarrelFull = hasBulletInBarrel || gunData.boltType == BoltType.OPEN_BOLT
         if (currentAmmo >= maxAmmo && isBarrelFull) return
 
@@ -70,12 +68,13 @@ public class LivingEntityReload(
         }
         data.reloadTimestamp = System.currentTimeMillis()
 
-        // 脚本 hook: start_reload
-        val script = TACZGunScriptAPI.resolveScript(gunData)
-        val startFunc = script?.let { TACZGunScriptAPI.checkFunction(it, "start_reload") }
+        // 脚本 hook: start_reload（脚本出错时按默认逻辑允许换弹）
+        val startFunc = GunScriptHooks.find(gunData, "start_reload")
         if (startFunc != null) {
             val api = TACZGunScriptAPI.create(shooter, data, currentGunItem)
-            val shouldProceed = startFunc.call(CoerceJavaToLua.coerce(api)).checkboolean()
+            val shouldProceed = GunScriptHooks.run(gunData, "start_reload", { true }) {
+                startFunc.call(CoerceJavaToLua.coerce(api)).checkboolean()
+            }
             if (!shouldProceed) {
                 data.reloadStateType = ReloadState.StateType.NOT_RELOADING
                 data.reloadTimestamp = -1L
@@ -91,27 +90,22 @@ public class LivingEntityReload(
      */
     public fun tickReload() {
         if (data.reloadTimestamp == -1L) return
-        val supplier = data.currentGunItem ?: return
-        val currentGunItem = supplier.get()
-        val iGun = currentGunItem.item as? IGun ?: return
-        val gunId = iGun.getGunId(currentGunItem)
-        val gunData = GunDataAccessor.getGunData(gunId) ?: return
+        val held = data.heldGun() ?: return
+        val gunData = held.gunData
+        val api = TACZGunScriptAPI.create(shooter, data, held.stack)
 
-        val api = TACZGunScriptAPI.create(shooter, data, currentGunItem)
-        val result: ReloadState
-
-        val script = TACZGunScriptAPI.resolveScript(gunData)
-        val tickFunc = script?.let { TACZGunScriptAPI.checkFunction(it, "tick_reload") }
-        if (tickFunc != null) {
-            val varargs = tickFunc.invoke(CoerceJavaToLua.coerce(api))
-            val typeOrdinal = varargs.arg(1).checkint()
-            val countDown = varargs.arg(2).checklong()
-            result = ReloadState(
-                ReloadState.StateType.values()[typeOrdinal],
-                countDown,
-            )
+        val tickFunc = GunScriptHooks.find(gunData, "tick_reload")
+        val result: ReloadState = if (tickFunc != null) {
+            GunScriptHooks.run(gunData, "tick_reload", { defaultTickReload(api, gunData) }) {
+                val varargs = tickFunc.invoke(CoerceJavaToLua.coerce(api))
+                val typeOrdinal = varargs.arg(1).checkint()
+                val countDown = varargs.arg(2).checklong()
+                // 脚本返回非法的状态序号时视为结束换弹，而不是抛出越界异常
+                val stateType = ReloadState.StateType.values().getOrElse(typeOrdinal) { ReloadState.StateType.NOT_RELOADING }
+                ReloadState(stateType, countDown)
+            }
         } else {
-            result = defaultTickReload(api, gunData)
+            defaultTickReload(api, gunData)
         }
 
         data.reloadStateType = result.stateType
@@ -125,18 +119,17 @@ public class LivingEntityReload(
      */
     public fun cancelReload(): Boolean {
         if (!data.reloadStateType.isReloading()) return false
-        val supplier = data.currentGunItem ?: return false
-        val currentGunItem = supplier.get()
-        val gunId = (currentGunItem.item as? IGun)?.getGunId(currentGunItem)
-        val gunData = gunId?.let { GunDataAccessor.getGunData(it) }
+        if (data.currentGunItem == null) return false
 
         // 脚本 hook: interrupt_reload
-        if (gunData != null) {
-            val script = TACZGunScriptAPI.resolveScript(gunData)
-            val interruptFunc = script?.let { TACZGunScriptAPI.checkFunction(it, "interrupt_reload") }
+        val held = data.heldGun()
+        if (held != null) {
+            val interruptFunc = GunScriptHooks.find(held.gunData, "interrupt_reload")
             if (interruptFunc != null) {
-                val api = TACZGunScriptAPI.create(shooter, data, currentGunItem)
-                interruptFunc.call(CoerceJavaToLua.coerce(api))
+                val api = TACZGunScriptAPI.create(shooter, data, held.stack)
+                GunScriptHooks.run(held.gunData, "interrupt_reload", {}) {
+                    interruptFunc.call(CoerceJavaToLua.coerce(api))
+                }
             }
         }
 
@@ -154,21 +147,22 @@ public class LivingEntityReload(
         return ReloadState(data.reloadStateType, countDown.coerceAtLeast(ReloadState.NOT_RELOADING_COUNTDOWN))
     }
 
+    /**
+     * 换弹总时长。与 [defaultTickReload] 一致：cooldown（finishing）时间是从换弹开始计算的累计时间，
+     * 而不是 feeding 之后的额外时间，因此总时长取两者较大值（原实现将两者相加，倒计时偏长）。
+     */
     private fun getExpectedReloadLength(): Long {
-        val supplier = data.currentGunItem ?: return 0L
-        val currentGunItem = supplier.get()
-        val iGun = currentGunItem.item as? IGun ?: return 0L
-        val gunId = iGun.getGunId(currentGunItem)
-        val gunData = GunDataAccessor.getGunData(gunId) ?: return 0L
-        return when (data.reloadStateType) {
+        val gunData = data.heldGun()?.gunData ?: return 0L
+        val seconds = when (data.reloadStateType) {
             ReloadState.StateType.EMPTY_RELOAD_FEEDING,
             ReloadState.StateType.EMPTY_RELOAD_FINISHING ->
-                ((gunData.emptyReloadFeedingTimeS + gunData.emptyReloadFinishingTimeS) * 1000).toLong()
+                maxOf(gunData.emptyReloadFeedingTimeS, gunData.emptyReloadFinishingTimeS)
             ReloadState.StateType.TACTICAL_RELOAD_FEEDING,
             ReloadState.StateType.TACTICAL_RELOAD_FINISHING ->
-                ((gunData.reloadFeedingTimeS + gunData.reloadFinishingTimeS) * 1000).toLong()
-            else -> 0L
+                maxOf(gunData.reloadFeedingTimeS, gunData.reloadFinishingTimeS)
+            else -> 0f
         }
+        return (seconds * 1000).toLong()
     }
 
     // =====================================================================

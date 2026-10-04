@@ -1,7 +1,5 @@
 package com.tacz.legacy.common.entity.shooter
 
-import com.tacz.legacy.api.item.IGun
-import com.tacz.legacy.common.resource.GunDataAccessor
 import net.minecraft.entity.EntityLivingBase
 
 /**
@@ -16,11 +14,7 @@ public class LivingEntityAim(
      * 切换瞄准状态。
      */
     public fun aim(isAiming: Boolean) {
-        val supplier = data.currentGunItem ?: return
-        val currentGunItem = supplier.get()
-        val iGun = currentGunItem.item as? IGun ?: return
-        val gunId = iGun.getGunId(currentGunItem)
-        val gunData = GunDataAccessor.getGunData(gunId) ?: return
+        if (data.heldGun() == null) return
 
         // 切枪中不允许瞄准
         if (draw.getDrawCoolDown() != 0L) return
@@ -35,19 +29,7 @@ public class LivingEntityAim(
      * 每 tick 更新瞄准进度（0.0 ~ 1.0）。
      */
     public fun tickAimingProgress() {
-        val supplier = data.currentGunItem
-        if (supplier == null) {
-            data.aimingProgress = 0f
-            return
-        }
-        val currentGunItem = supplier.get()
-        val iGun = currentGunItem.item as? IGun
-        if (iGun == null) {
-            data.aimingProgress = 0f
-            return
-        }
-        val gunId = iGun.getGunId(currentGunItem)
-        val gunData = GunDataAccessor.getGunData(gunId)
+        val gunData = data.heldGun()?.gunData
         if (gunData == null) {
             data.aimingProgress = 0f
             return

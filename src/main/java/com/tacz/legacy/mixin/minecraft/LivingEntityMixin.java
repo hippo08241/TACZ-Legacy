@@ -202,18 +202,20 @@ public abstract class LivingEntityMixin implements IGunOperator, KnockBackModifi
         if (heatTs < 0) return;
 
         // 脚本 hook: tick_heat
-        org.luaj.vm2.LuaTable script = com.tacz.legacy.common.entity.shooter.TACZGunScriptAPI.Companion.resolveScript(gunData);
-        org.luaj.vm2.LuaFunction tickHeatFunc = script != null
-                ? com.tacz.legacy.common.entity.shooter.TACZGunScriptAPI.Companion.checkFunction(script, "tick_heat")
-                : null;
+        org.luaj.vm2.LuaFunction tickHeatFunc = GunScriptHooks.INSTANCE.find(gunData, "tick_heat");
         if (tickHeatFunc != null) {
             com.tacz.legacy.common.entity.shooter.TACZGunScriptAPI api =
                     com.tacz.legacy.common.entity.shooter.TACZGunScriptAPI.Companion.create(self, tacz$dataHolder, mainHand, null, null);
-            tickHeatFunc.call(
-                    org.luaj.vm2.lib.jse.CoerceJavaToLua.coerce(api),
-                    org.luaj.vm2.LuaValue.valueOf(heatTs)
-            );
-            return;
+            try {
+                tickHeatFunc.call(
+                        org.luaj.vm2.lib.jse.CoerceJavaToLua.coerce(api),
+                        org.luaj.vm2.LuaValue.valueOf(heatTs)
+                );
+                return;
+            } catch (RuntimeException e) {
+                // 脚本错误不应让实体 tick 崩溃，回退到默认冷却逻辑
+                GunScriptHooks.INSTANCE.report(gunData, "tick_heat", e);
+            }
         }
 
         long now = System.currentTimeMillis();

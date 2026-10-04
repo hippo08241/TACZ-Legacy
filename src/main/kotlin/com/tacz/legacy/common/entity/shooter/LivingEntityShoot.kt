@@ -119,12 +119,13 @@ public class LivingEntityShoot(
         data.shootTimestamp = timestamp
 
         // 检查是否有数据脚本
-        val script = TACZGunScriptAPI.resolveScript(gunData)
-        val shootFunc = script?.let { TACZGunScriptAPI.checkFunction(it, "shoot") }
+        val shootFunc = GunScriptHooks.find(gunData, "shoot")
         if (shootFunc != null) {
-            // 脚本接管射击逻辑
+            // 脚本接管射击逻辑；脚本出错时不再继续射击，只记录日志，避免服务端崩溃
             val api = TACZGunScriptAPI.create(shooter, data, currentGunItem, pitch, yaw)
-            shootFunc.call(org.luaj.vm2.lib.jse.CoerceJavaToLua.coerce(api))
+            GunScriptHooks.run(gunData, "shoot", {}) {
+                shootFunc.call(org.luaj.vm2.lib.jse.CoerceJavaToLua.coerce(api))
+            }
         } else {
             // 默认射击路径
             executeShoot(currentGunItem, iGun, gunData, pitch, yaw)

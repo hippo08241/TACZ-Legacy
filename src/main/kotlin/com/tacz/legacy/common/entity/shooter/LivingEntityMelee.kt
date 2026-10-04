@@ -6,6 +6,7 @@ import com.tacz.legacy.common.network.TACZNetworkHandler
 import com.tacz.legacy.common.network.message.event.ServerMessageMelee
 import com.tacz.legacy.common.resource.GunDataAccessor
 import net.minecraft.entity.EntityLivingBase
+import net.minecraft.entity.player.EntityPlayer
 import net.minecraft.util.DamageSource
 import net.minecraft.util.math.AxisAlignedBB
 import net.minecraft.util.math.Vec3d
@@ -24,13 +25,10 @@ public class LivingEntityMelee(
      * 发起近战攻击。
      */
     public fun melee() {
-        val supplier = data.currentGunItem ?: return
-        val currentGunItem = supplier.get()
-        val iGun = currentGunItem.item as? IGun ?: return
-        val gunId = iGun.getGunId(currentGunItem)
-        val gunData = GunDataAccessor.getGunData(gunId) ?: return
-
-        val meleeData = gunData.meleeData ?: return
+        if (shooter.world.isRemote) return
+        val held = data.heldGun() ?: return
+        val currentGunItem = held.stack
+        val meleeData = held.gunData.meleeData ?: return
 
         // 冷却检查
         val meleeCoolDown = getMeleeCoolDown()
@@ -62,14 +60,12 @@ public class LivingEntityMelee(
      */
     public fun tickMelee() {
         if (data.meleePrepTickCount < 0) return
-        val supplier = data.currentGunItem ?: return
-        val currentGunItem = supplier.get()
-        val iGun = currentGunItem.item as? IGun ?: return
-        val gunId = iGun.getGunId(currentGunItem)
-        val gunData = GunDataAccessor.getGunData(gunId) ?: return
-
-        val meleeData = gunData.meleeData ?: return
-        val defaultMeleeData = meleeData.defaultMeleeData ?: return
+        // 切枪后不再持有带近战数据的枪：取消待执行的近战，避免计数器永远停留
+        val defaultMeleeData = data.heldGun()?.gunData?.meleeData?.defaultMeleeData
+        if (defaultMeleeData == null) {
+            data.meleePrepTickCount = -1
+            return
+        }
 
         if (defaultMeleeData.prepTime > 0f) {
             data.meleePrepTickCount++
@@ -78,15 +74,15 @@ public class LivingEntityMelee(
                 executeDefaultMeleeDamage(defaultMeleeData)
                 data.meleePrepTickCount = -1
             }
+        } else {
+            data.meleePrepTickCount = -1
         }
     }
 
     public fun getMeleeCoolDown(): Long {
-        val supplier = data.currentGunItem ?: return 0
-        val currentGunItem = supplier.get()
+        val currentGunItem = data.currentGunItem?.get() ?: return 0
         val iGun = currentGunItem.item as? IGun ?: return 0
-        val gunId = iGun.getGunId(currentGunItem)
-        val gunData = GunDataAccessor.getGunData(gunId) ?: return -1
+        val gunData = GunDataAccessor.getGunData(iGun.getGunId(currentGunItem)) ?: return -1
 
         val meleeData = gunData.meleeData ?: return 0
         if (data.meleeTimestamp < 0) return 0
@@ -108,6 +104,12 @@ public class LivingEntityMelee(
 
         val candidates = shooter.world.getEntitiesWithinAABBExcludingEntity(shooter, searchBox)
         val halfAngleRad = Math.toRadians(mData.rangeAngle.toDouble())
+        // 非玩家射手（NPC/怪物）也应造成近战伤害，原实现对非玩家直接跳过
+        val damageSource = if (shooter is EntityPlayer) {
+            DamageSource.causePlayerDamage(shooter)
+        } else {
+            DamageSource.causeMobDamage(shooter)
+        }
 
         for (entity in candidates) {
             if (entity !is EntityLivingBase) continue
@@ -120,7 +122,7 @@ public class LivingEntityMelee(
             if (dist > mData.distance) continue
             val angle = Math.acos(look.dotProduct(toEntity.normalize()).coerceIn(-1.0, 1.0))
             if (angle <= halfAngleRad) {
-                entity.attackEntityFrom(DamageSource.causePlayerDamage(shooter as? net.minecraft.entity.player.EntityPlayer ?: continue), mData.damage)
+                entity.attackEntityFrom(damageSource, mData.damage)
             }
         }
     }

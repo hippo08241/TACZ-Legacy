@@ -702,7 +702,7 @@ internal class EntityKineticBullet : EntityThrowable, IEntityAdditionalSpawnData
         if (!feedback.appliedDamage) {
             return
         }
-        val attacker = thrower as? EntityLivingBase
+        val attacker = thrower
         if (target is EntityLivingBase && !target.isEntityAlive) {
             MinecraftForge.EVENT_BUS.post(
                 EntityKillByGunEvent(

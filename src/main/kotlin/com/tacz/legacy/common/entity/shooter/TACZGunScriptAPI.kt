@@ -3,6 +3,7 @@ package com.tacz.legacy.common.entity.shooter
 import com.tacz.legacy.api.DefaultAssets
 import com.tacz.legacy.api.event.GunFireEvent
 import com.tacz.legacy.api.item.IGun
+import com.tacz.legacy.api.item.attachment.AttachmentType
 import com.tacz.legacy.api.item.gun.FireMode
 import com.tacz.legacy.common.application.refit.LegacyGunRefitRuntime
 import com.tacz.legacy.common.entity.EntityKineticBullet
@@ -102,10 +103,11 @@ internal class TACZGunScriptAPI {
 
         // 过热处理：检查脚本是否定义了 handle_shoot_heat
         if (data.hasHeatData) {
-            val script = resolveScript(data)
-            val heatFunc = script?.let { checkFunction(it, "handle_shoot_heat") }
+            val heatFunc = GunScriptHooks.find(data, "handle_shoot_heat")
             if (heatFunc != null) {
-                heatFunc.call(CoerceJavaToLua.coerce(this))
+                GunScriptHooks.run(data, "handle_shoot_heat", { handleShootHeat() }) {
+                    heatFunc.call(CoerceJavaToLua.coerce(this))
+                }
             } else {
                 handleShootHeat()
             }
@@ -234,7 +236,11 @@ internal class TACZGunScriptAPI {
 
     fun getMaxAmmoCount(): Int = LegacyGunRefitRuntime.computeAmmoCapacity(itemStack)
 
-    fun getMagExtentLevel(): Int = 0
+    fun getMagExtentLevel(): Int {
+        val gun = iGun ?: return 0
+        val attachmentId = gun.getAttachmentId(itemStack, AttachmentType.EXTENDED_MAG)
+        return GunDataAccessor.getAttachmentExtendedMagLevel(attachmentId).coerceIn(0, 3)
+    }
 
     fun hasAmmoToConsume(): Boolean {
         if (!isReloadingNeedConsumeAmmo()) return true
@@ -433,7 +439,10 @@ internal class TACZGunScriptAPI {
     // =====================================================================
 
     fun getAttachment(type: String): String {
-        return DefaultAssets.EMPTY_AMMO_ID.toString()
+        val gun = iGun ?: return DefaultAssets.EMPTY_AMMO_ID.toString()
+        val attachmentType = runCatching { AttachmentType.valueOf(type.uppercase()) }.getOrNull()
+            ?: return DefaultAssets.EMPTY_AMMO_ID.toString()
+        return gun.getAttachmentId(itemStack, attachmentType).toString()
     }
 
     // =====================================================================

@@ -1,10 +1,8 @@
 package com.tacz.legacy.common.entity.shooter
 
-import com.tacz.legacy.api.item.IGun
 import com.tacz.legacy.api.item.gun.FireMode
 import com.tacz.legacy.common.network.TACZNetworkHandler
 import com.tacz.legacy.common.network.message.event.ServerMessageGunFireSelect
-import com.tacz.legacy.common.resource.GunDataAccessor
 import net.minecraft.entity.EntityLivingBase
 
 /**
@@ -18,11 +16,10 @@ public class LivingEntityFireSelect(
      * 循环切换射击模式。
      */
     public fun fireSelect() {
-        val supplier = data.currentGunItem ?: return
-        val currentGunItem = supplier.get()
-        val iGun = currentGunItem.item as? IGun ?: return
-        val gunId = iGun.getGunId(currentGunItem)
-        val gunData = GunDataAccessor.getGunData(gunId) ?: return
+        val held = data.heldGun() ?: return
+        val currentGunItem = held.stack
+        val iGun = held.iGun
+        val gunData = held.gunData
 
         val fireModes = gunData.fireModesSet
         if (fireModes.isEmpty()) return
@@ -31,7 +28,8 @@ public class LivingEntityFireSelect(
         val currentIndex = fireModes.indexOfFirst { it.equals(currentMode.name, ignoreCase = true) }
         val nextIndex = if (currentIndex < 0) 0 else (currentIndex + 1) % fireModes.size
         val nextModeName = fireModes[nextIndex]
-        val nextMode = try { FireMode.valueOf(nextModeName.uppercase()) } catch (_: Exception) { FireMode.UNKNOWN }
+        // 无法识别的模式名直接跳过，避免把枪切到无法射击的 UNKNOWN 模式
+        val nextMode = runCatching { FireMode.valueOf(nextModeName.uppercase()) }.getOrNull() ?: return
         iGun.setFireMode(currentGunItem, nextMode)
         if (!shooter.world.isRemote && currentMode != nextMode) {
             TACZNetworkHandler.sendToTrackingEntity(

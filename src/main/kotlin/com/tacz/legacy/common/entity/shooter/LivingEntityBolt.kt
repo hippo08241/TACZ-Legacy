@@ -1,9 +1,7 @@
 package com.tacz.legacy.common.entity.shooter
 
-import com.tacz.legacy.api.item.IGun
 import com.tacz.legacy.common.resource.BoltType
 import com.tacz.legacy.common.resource.GunCombatData
-import com.tacz.legacy.common.resource.GunDataAccessor
 import net.minecraft.entity.EntityLivingBase
 import org.luaj.vm2.lib.jse.CoerceJavaToLua
 
@@ -20,11 +18,10 @@ public class LivingEntityBolt(
      * 执行拉栓操作。
      */
     public fun bolt() {
-        val supplier = data.currentGunItem ?: return
-        val currentGunItem = supplier.get()
-        val iGun = currentGunItem.item as? IGun ?: return
-        val gunId = iGun.getGunId(currentGunItem)
-        val gunData = GunDataAccessor.getGunData(gunId) ?: return
+        val held = data.heldGun() ?: return
+        val currentGunItem = held.stack
+        val iGun = held.iGun
+        val gunData = held.gunData
 
         // 过滤：开膛/闭膛枪不需要手动拉栓
         if (gunData.boltType != BoltType.MANUAL_ACTION) return
@@ -42,11 +39,12 @@ public class LivingEntityBolt(
         data.boltTimestamp = System.currentTimeMillis()
 
         // 脚本 hook: start_bolt → 返回 boolean（是否开始拉栓）
-        val script = TACZGunScriptAPI.resolveScript(gunData)
-        val startFunc = script?.let { TACZGunScriptAPI.checkFunction(it, "start_bolt") }
+        val startFunc = GunScriptHooks.find(gunData, "start_bolt")
         if (startFunc != null) {
             val api = TACZGunScriptAPI.create(shooter, data, currentGunItem)
-            data.isBolting = startFunc.call(CoerceJavaToLua.coerce(api)).checkboolean()
+            data.isBolting = GunScriptHooks.run(gunData, "start_bolt", { true }) {
+                startFunc.call(CoerceJavaToLua.coerce(api)).checkboolean()
+            }
         } else {
             data.isBolting = true
         }
@@ -57,18 +55,15 @@ public class LivingEntityBolt(
      */
     public fun tickBolt() {
         if (!data.isBolting) return
-        val supplier = data.currentGunItem ?: run { data.isBolting = false; return }
-        val currentGunItem = supplier.get()
-        val iGun = currentGunItem.item as? IGun ?: run { data.isBolting = false; return }
-        val gunId = iGun.getGunId(currentGunItem)
-        val gunData = GunDataAccessor.getGunData(gunId) ?: run { data.isBolting = false; return }
+        val held = data.heldGun() ?: run { data.isBolting = false; return }
+        val gunData = held.gunData
+        val api = TACZGunScriptAPI.create(shooter, data, held.stack)
 
-        val api = TACZGunScriptAPI.create(shooter, data, currentGunItem)
-
-        val script = TACZGunScriptAPI.resolveScript(gunData)
-        val tickFunc = script?.let { TACZGunScriptAPI.checkFunction(it, "tick_bolt") }
+        val tickFunc = GunScriptHooks.find(gunData, "tick_bolt")
         data.isBolting = if (tickFunc != null) {
-            tickFunc.call(CoerceJavaToLua.coerce(api)).checkboolean()
+            GunScriptHooks.run(gunData, "tick_bolt", { defaultTickBolt(api, gunData) }) {
+                tickFunc.call(CoerceJavaToLua.coerce(api)).checkboolean()
+            }
         } else {
             defaultTickBolt(api, gunData)
         }

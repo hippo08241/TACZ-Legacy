@@ -46,21 +46,23 @@ internal object TACZBulletSpreadResolver {
         pitch: Float,
         yaw: Float,
     ): Boolean {
-        val script = TACZGunScriptAPI.resolveScript(gunData) ?: return false
-        val function = TACZGunScriptAPI.checkFunction(script, "calcSpread") ?: return false
+        val function = GunScriptHooks.find(gunData, "calcSpread") ?: return false
         val api = existingApi ?: TACZGunScriptAPI.create(shooter, dataHolder, gunItem)
-        val luaValue = function.call(
-            CoerceJavaToLua.coerce(api),
-            LuaValue.valueOf(bulletIndex),
-            LuaValue.valueOf(inaccuracy.toDouble()),
-        )
-        if (!luaValue.istable()) {
-            return false
+        // 脚本出错时返回 false，由调用方回退到默认散布
+        return GunScriptHooks.run(gunData, "calcSpread", { false }) {
+            val luaValue = function.call(
+                CoerceJavaToLua.coerce(api),
+                LuaValue.valueOf(bulletIndex),
+                LuaValue.valueOf(inaccuracy.toDouble()),
+            )
+            if (!luaValue.istable()) {
+                return@run false
+            }
+            val table = luaValue.checktable()
+            val spreadX = table.get(1).checkdouble()
+            val spreadY = table.get(2).checkdouble()
+            bullet.shootFromRotation(shooter, pitch, yaw, processedSpeed, spreadX, spreadY)
+            true
         }
-        val table = luaValue.checktable()
-        val spreadX = table.get(1).checkdouble()
-        val spreadY = table.get(2).checkdouble()
-        bullet.shootFromRotation(shooter, pitch, yaw, processedSpeed, spreadX, spreadY)
-        return true
     }
 }
