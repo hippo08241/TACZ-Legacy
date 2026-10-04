@@ -158,10 +158,15 @@ internal class LegacyProjectileExplosion(
             entity.motionX += normX * knockbackAmount * knockbackScale
             entity.motionY += normY * knockbackAmount * knockbackScale
             entity.motionZ += normZ * knockbackAmount * knockbackScale
-            entity.velocityChanged = true
 
-            if (entity is EntityPlayer && !entity.isSpectator && (!entity.isCreative || !entity.capabilities.isFlying)) {
-                getPlayerKnockbackMap()[entity] = Vec3d(normX * impact * knockbackScale, normY * impact * knockbackScale, normZ * impact * knockbackScale)
+            if (entity is EntityPlayer) {
+                // 玩家的击退与原版一样只通过 SPacketExplosion 下发；若同时标记 velocityChanged，
+                // 客户端会再收到一次速度同步，导致玩家受到双倍击退
+                if (!entity.isSpectator && (!entity.isCreative || !entity.capabilities.isFlying)) {
+                    getPlayerKnockbackMap()[entity] = Vec3d(normX * knockbackAmount * knockbackScale, normY * knockbackAmount * knockbackScale, normZ * knockbackAmount * knockbackScale)
+                }
+            } else {
+                entity.velocityChanged = true
             }
         }
     }
