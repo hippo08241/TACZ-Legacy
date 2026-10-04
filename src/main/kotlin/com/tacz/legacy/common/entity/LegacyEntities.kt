@@ -9,6 +9,8 @@ import com.tacz.legacy.common.resource.BulletCombatData
 import com.tacz.legacy.common.resource.DistanceDamagePoint
 import com.tacz.legacy.common.config.HeadShotAabbConfigRead
 import com.tacz.legacy.common.config.LegacyConfigManager
+import com.tacz.legacy.common.item.LegacyItems
+import com.tacz.legacy.common.registry.LegacySoundEvents
 import com.tacz.legacy.common.network.TACZNetworkHandler
 import com.tacz.legacy.common.network.message.event.ServerMessageBulletHitBlock
 import com.tacz.legacy.common.network.message.event.ServerMessageGunHurt
@@ -25,6 +27,7 @@ import net.minecraft.entity.EntityList
 import net.minecraft.entity.EntityLivingBase
 import net.minecraft.entity.item.EntityMinecartEmpty
 import net.minecraft.entity.player.EntityPlayerMP
+import net.minecraft.item.ItemStack
 import net.minecraft.entity.projectile.EntityThrowable
 import net.minecraft.entity.SharedMonsterAttributes
 import net.minecraft.nbt.NBTTagCompound
@@ -34,6 +37,7 @@ import net.minecraft.util.DamageSource
 import net.minecraft.util.EntityDamageSource
 import net.minecraft.util.EntityDamageSourceIndirect
 import net.minecraft.util.ResourceLocation
+import net.minecraft.util.SoundCategory
 import net.minecraft.util.math.AxisAlignedBB
 import net.minecraft.util.math.BlockPos
 import net.minecraft.util.math.MathHelper
@@ -846,4 +850,39 @@ internal class TargetMinecartEntity : EntityMinecartEmpty {
     constructor(worldIn: World) : super(worldIn)
 
     constructor(worldIn: World, x: Double, y: Double, z: Double) : super(worldIn, x, y, z)
+
+    /**
+     * 被子弹击中时只播放受击效果，不累积矿车损坏值，否则靶车会被几发子弹直接打掉。
+     * 其他伤害（玩家近战等）保持原版矿车行为。
+     */
+    override fun attackEntityFrom(source: DamageSource, amount: Float): Boolean {
+        if (source.immediateSource !is EntityKineticBullet) {
+            return super.attackEntityFrom(source, amount)
+        }
+        if (world.isRemote || isDead) {
+            return true
+        }
+        if (isEntityInvulnerable(source)) {
+            return false
+        }
+        rollingDirection = -rollingDirection
+        rollingAmplitude = 10
+        markVelocityChanged()
+        world.playSound(null, posX, posY, posZ, LegacySoundEvents.TARGET_BLOCK_HIT, SoundCategory.NEUTRAL, 1.0f, 1.0f)
+        return true
+    }
+
+    /** 掉落靶车物品而不是原版矿车 */
+    override fun killMinecart(source: DamageSource) {
+        setDead()
+        if (world.gameRules.getBoolean("doEntityDrops")) {
+            val stack = ItemStack(LegacyItems.TARGET_MINECART)
+            if (hasCustomName()) {
+                stack.setStackDisplayName(customNameTag)
+            }
+            entityDropItem(stack, 0.0f)
+        }
+    }
+
+    override fun getCartItem(): ItemStack = ItemStack(LegacyItems.TARGET_MINECART)
 }

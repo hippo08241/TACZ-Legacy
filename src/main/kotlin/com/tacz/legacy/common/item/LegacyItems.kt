@@ -18,6 +18,8 @@ import com.tacz.legacy.common.resource.GunDataAccessor
 import com.tacz.legacy.common.resource.TACZGunPackPresentation
 import com.tacz.legacy.common.resource.TACZGunPackRuntimeRegistry
 import com.tacz.legacy.common.registry.LegacyCreativeTabs
+import com.tacz.legacy.common.entity.TargetMinecartEntity
+import net.minecraft.block.BlockRailBase
 import net.minecraft.block.state.IBlockState
 import net.minecraft.client.util.ITooltipFlag
 import net.minecraft.creativetab.CreativeTabs
@@ -27,7 +29,9 @@ import net.minecraft.item.Item
 import net.minecraft.item.ItemBlock
 import net.minecraft.item.ItemStack
 import net.minecraft.nbt.NBTTagCompound
+import net.minecraft.util.EnumActionResult
 import net.minecraft.util.EnumFacing
+import net.minecraft.util.EnumHand
 import net.minecraft.util.NonNullList
 import net.minecraft.util.ResourceLocation
 import net.minecraft.util.math.BlockPos
@@ -44,7 +48,7 @@ internal object LegacyItems {
     internal val AMMO: AmmoItem = AmmoItem().named("ammo", LegacyCreativeTabs.AMMO)
     internal val ATTACHMENT: AttachmentItem = AttachmentItem().named("attachment", LegacyCreativeTabs.PARTS)
     internal val AMMO_BOX: AmmoBoxItem = AmmoBoxItem().named("ammo_box", LegacyCreativeTabs.OTHER)
-    internal val TARGET_MINECART: LegacySimpleItem = LegacySimpleItem(maxStackSize = 1).named("target_minecart", LegacyCreativeTabs.OTHER)
+    internal val TARGET_MINECART: TargetMinecartItem = TargetMinecartItem().named("target_minecart", LegacyCreativeTabs.OTHER)
 
     internal val GUN_SMITH_TABLE: LegacyBlockItem = createBlockItem(LegacyBlocks.GUN_SMITH_TABLE)
     internal val WORKBENCH_A: LegacyBlockItem = createBlockItem(LegacyBlocks.WORKBENCH_A)
@@ -94,6 +98,41 @@ internal object LegacyItems {
 internal open class LegacySimpleItem(maxStackSize: Int = 64) : Item() {
     init {
         this.maxStackSize = maxStackSize
+    }
+}
+
+/**
+ * 靶车物品：与原版矿车物品一样只能放置在铁轨上（原先为普通物品，无法放置）。
+ */
+internal class TargetMinecartItem : LegacySimpleItem(maxStackSize = 1) {
+    override fun onItemUse(
+        player: EntityPlayer,
+        worldIn: World,
+        pos: BlockPos,
+        hand: EnumHand,
+        facing: EnumFacing,
+        hitX: Float,
+        hitY: Float,
+        hitZ: Float,
+    ): EnumActionResult {
+        val state = worldIn.getBlockState(pos)
+        if (!BlockRailBase.isRailBlock(state)) {
+            return EnumActionResult.FAIL
+        }
+        val stack = player.getHeldItem(hand)
+        if (!worldIn.isRemote) {
+            val railBlock = state.block as? BlockRailBase
+            val direction = railBlock?.getRailDirection(worldIn, pos, state, null)
+                ?: BlockRailBase.EnumRailDirection.NORTH_SOUTH
+            val yOffset = if (direction.isAscending) 0.5 else 0.0
+            val cart = TargetMinecartEntity(worldIn, pos.x + 0.5, pos.y + 0.0625 + yOffset, pos.z + 0.5)
+            if (stack.hasDisplayName()) {
+                cart.customNameTag = stack.displayName
+            }
+            worldIn.spawnEntity(cart)
+        }
+        stack.shrink(1)
+        return EnumActionResult.SUCCESS
     }
 }
 
