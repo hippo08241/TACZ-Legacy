@@ -71,19 +71,16 @@ public class ObjectAnimation {
     }
 
     public void applyAnimationListeners(AnimationListenerSupplier supplier) {
-        int added = 0;
         for (List<ObjectAnimationChannel> channelList : channels.values()) {
             for (ObjectAnimationChannel channel : channelList) {
                 AnimationListener listener = supplier.supplyListeners(channel.node, channel.type);
                 if (listener != null) {
                     if (!channel.getListeners().contains(listener)) {
                         channel.addListener(listener);
-                        added++;
                     }
                 }
             }
         }
-        com.tacz.legacy.TACZLegacy.logger.info("Animation {} applied {} listeners", name, added);
     }
 
     public void update(boolean blend, float timeNs) {
