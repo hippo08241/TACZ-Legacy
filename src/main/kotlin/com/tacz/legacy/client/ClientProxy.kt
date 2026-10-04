@@ -87,6 +87,8 @@ internal class ClientProxy : CommonProxy() {
         val snapshot = TACZGunPackRuntimeRegistry.getSnapshot()
         TACZClientAssetManager.reload(snapshot)
         TACZBloomBridge.initIfPresent()
+        // 瞄具镜片遮罩需要模板缓冲，必须在渲染开始前启用（渲染中途启用会重建帧缓冲导致画面错乱）
+        com.tacz.legacy.client.util.RenderHelper.ensureMainFramebufferStencil()
 
         BootstrapDiagnostics.record(BootstrapStep.CLIENT_RUNTIME_READY)
         TACZLegacy.logger.info("[FoundationSmoke] CLIENT runtime hooks ready.")

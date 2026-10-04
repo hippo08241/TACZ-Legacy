@@ -338,17 +338,17 @@ public class BedrockAttachmentModel extends BedrockAnimatedModel {
         GL11.glStencilMask(0xFF);
         GL11.glStencilFunc(GL11.GL_ALWAYS, 0, 0xFF);
         GL11.glStencilOp(GL11.GL_KEEP, GL11.GL_KEEP, GL11.GL_KEEP);
-        GL11.glColorMask(true, true, true, true);
-        GL11.glDepthMask(true);
-        GL11.glEnable(GL11.GL_DEPTH_TEST);
+        GlStateManager.colorMask(true, true, true, true);
+        GlStateManager.depthMask(true);
+        GlStateManager.enableDepth();
     }
 
     private void renderOcularStencil(boolean scopeOcular) {
         if (ocularNodePaths.isEmpty()) {
             return;
         }
-        GL11.glColorMask(false, false, false, false);
-        GL11.glDepthMask(false);
+        GlStateManager.colorMask(false, false, false, false);
+        GlStateManager.depthMask(false);
         GL11.glStencilMask(0xFF);
         GL11.glStencilOp(GL11.GL_KEEP, GL11.GL_KEEP, GL11.GL_REPLACE);
         for (int i = ocularNodePaths.size() - 1; i >= 0; i--) {
@@ -358,22 +358,22 @@ public class BedrockAttachmentModel extends BedrockAnimatedModel {
             }
         }
         GL11.glStencilOp(GL11.GL_KEEP, GL11.GL_KEEP, GL11.GL_KEEP);
-        GL11.glDepthMask(true);
-        GL11.glColorMask(true, true, true, true);
+        GlStateManager.depthMask(true);
+        GlStateManager.colorMask(true, true, true, true);
     }
 
     private void renderDivisionOnly() {
         if (divisionNodePaths.isEmpty()) {
             return;
         }
-        GL11.glDisable(GL11.GL_DEPTH_TEST);
+        GlStateManager.disableDepth();
         try {
             for (int i = 0; i < divisionNodePaths.size(); i++) {
                 GL11.glStencilFunc(GL11.GL_EQUAL, i + 1, 0xFF);
                 renderTempPart(divisionNodePaths.get(i));
             }
         } finally {
-            GL11.glEnable(GL11.GL_DEPTH_TEST);
+            GlStateManager.enableDepth();
         }
     }
 
@@ -385,8 +385,10 @@ public class BedrockAttachmentModel extends BedrockAnimatedModel {
         BufferBuilder buffer = tessellator.getBuffer();
 
         GL11.glStencilOp(GL11.GL_KEEP, GL11.GL_KEEP, GL11.GL_INVERT);
-        GL11.glColorMask(false, false, false, false);
-        GL11.glDepthMask(false);
+        GlStateManager.colorMask(false, false, false, false);
+        GlStateManager.depthMask(false);
+        // 绘制纯色圆盘时关闭纹理，避免采样到透明像素被 alpha 测试丢弃而无法写入模板
+        GlStateManager.disableTexture2D();
 
         float radius = 80.0f * scopeViewRadiusModifier * resolveCurrentAimingProgress();
         for (int i = 0; i < ocularNodePaths.size(); i++) {
@@ -407,9 +409,10 @@ public class BedrockAttachmentModel extends BedrockAnimatedModel {
             }
             tessellator.draw();
         }
+        GlStateManager.enableTexture2D();
 
-        GL11.glDepthMask(true);
-        GL11.glColorMask(true, true, true, true);
+        GlStateManager.depthMask(true);
+        GlStateManager.colorMask(true, true, true, true);
         GL11.glStencilOp(GL11.GL_KEEP, GL11.GL_KEEP, GL11.GL_KEEP);
 
         for (int i = 0; i < ocularNodePaths.size() && i < divisionNodePaths.size(); i++) {
