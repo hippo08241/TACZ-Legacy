@@ -20,7 +20,7 @@ import com.tacz.legacy.common.resource.TACZRecipeFilterDefinition
 import com.tacz.legacy.common.resource.TACZRuntimeSnapshot
 import com.tacz.legacy.common.resource.TACZWorkbenchTabDefinition
 import net.minecraft.block.Block
-import net.minecraft.entity.item.EntityItem
+import net.minecraftforge.items.ItemHandlerHelper
 import net.minecraft.entity.player.EntityPlayer
 import net.minecraft.init.Blocks
 import net.minecraft.init.Items
@@ -162,9 +162,8 @@ internal object LegacyGunSmithingRuntime {
         applyConsumptionPlan(player, plan)
         val output = recipe.result.copy()
         if (!player.world.isRemote) {
-            player.world.spawnEntity(
-                EntityItem(player.world, player.posX, player.posY + 0.5, player.posZ, output.copy()),
-            )
+            // 与上游一致直接放入背包，背包满时才掉落在脚下（原实现总是生成掉落物，可能被他人捡走）
+            ItemHandlerHelper.giveItemToPlayer(player, output.copy())
         }
         player.inventory.markDirty()
         player.inventoryContainer.detectAndSendChanges()
