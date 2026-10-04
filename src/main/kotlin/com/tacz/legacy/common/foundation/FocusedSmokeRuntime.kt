@@ -274,6 +274,8 @@ internal object FocusedSmokeRuntime {
     private const val HIT_FEEDBACK_TARGET_PROPERTY: String = "tacz.focusedSmoke.hitFeedbackTarget"
     private const val DUPLICATE_GUN_PROPERTY: String = "tacz.focusedSmoke.duplicateGun"
     internal const val DUPLICATE_GUN_SLOT: Int = 2
+    private const val GHOST_STRESS_PROPERTY: String = "tacz.focusedSmoke.ghostShotStress"
+    internal const val GHOST_STRESS_GUN_SLOT: Int = 3
 
     private val loggedKeys = ConcurrentHashMap.newKeySet<String>()
 
@@ -303,6 +305,15 @@ internal object FocusedSmokeRuntime {
 
     /** 未启用命中目标时恒为 true；启用时要求目标确实受到伤害 */
     internal fun hitTargetSatisfied(): Boolean = !hitFeedbackTargetEnabled || hitTargetDamaged
+
+    @Volatile
+    private var ghostStressCompleted: Boolean = false
+
+    /** 客户端完成 ghost shot 压力测试后调用（集成服务端与客户端同一 JVM） */
+    internal fun notifyGhostStressCompleted() {
+        ghostStressCompleted = true
+        maybeLogPass()
+    }
 
     @Volatile
     internal var tracerFrameObserved: Boolean = false
@@ -408,6 +419,10 @@ internal object FocusedSmokeRuntime {
     /** 在 2 号快捷栏放一把与常规枪完全相同的枪，并用它完成常规射击（回归：背包中有两把相同的枪时无法开火）。 */
     internal val duplicateGunEnabled: Boolean
         get() = java.lang.Boolean.getBoolean(DUPLICATE_GUN_PROPERTY)
+
+    /** Ghost shot 压力测试：额外放一把装满的同款枪到 3 号槽，并在常规射击后反复“疾跑→开火 / 切枪→开火” */
+    internal val ghostShotStressEnabled: Boolean
+        get() = java.lang.Boolean.getBoolean(GHOST_STRESS_PROPERTY)
 
     internal val hitFeedbackTargetEnabled: Boolean
         get() = System.getProperty(HIT_FEEDBACK_TARGET_PROPERTY, "false").toBoolean()
@@ -635,6 +650,9 @@ internal object FocusedSmokeRuntime {
         if (!animationObserved || !regularProjectileObserved || !hitTargetSatisfied()) {
             return
         }
+        if (ghostShotStressEnabled && !ghostStressCompleted) {
+            return
+        }
         if (requireTracerFrameEnabled && !tracerFrameObserved) {
             return
         }
@@ -673,6 +691,9 @@ internal object FocusedSmokeRuntime {
             }
         }
         player.inventory.setInventorySlotContents(0, regularStack)
+        if (ghostShotStressEnabled) {
+            player.inventory.setInventorySlotContents(GHOST_STRESS_GUN_SLOT, regularStack.copy())
+        }
         if (duplicateGunEnabled) {
             // 复制品去掉 dummy 弹药，和从创造栏/工作台得到的普通枪一致
             val duplicate = regularStack.copy()
@@ -755,7 +776,8 @@ internal object FocusedSmokeRuntime {
         val iGun = stack.item as IGun
         val gunData = GunDataAccessor.getGunData(gunId)
         val ammoAmount = gunData?.ammoAmount?.coerceAtLeast(1) ?: 1
-        val initialAmmo = if (ammoAmount > 1) ammoAmount - 1 else ammoAmount
+        // 少装一发，保证换弹流程一定会被触发（单发装填的枪从 0 发开始）
+        val initialAmmo = ammoAmount - 1
         iGun.setGunId(stack, gunId)
         iGun.setCurrentAmmoCount(stack, initialAmmo)
         iGun.setDummyAmmoAmount(stack, (ammoAmount * 8).coerceAtLeast(96))

@@ -1,6 +1,9 @@
 package com.tacz.legacy.client.foundation
 
 import com.tacz.legacy.TACZLegacy
+import net.minecraft.client.settings.KeyBinding
+import net.minecraft.network.play.client.CPacketEntityAction
+import com.tacz.legacy.common.entity.shooter.GunScriptHooks
 import com.tacz.legacy.api.DefaultAssets
 import com.tacz.legacy.api.client.animation.AnimationController
 import com.tacz.legacy.api.client.animation.ObjectAnimationRunner
@@ -68,6 +71,8 @@ internal object FocusedSmokeClientHooks {
     private const val RELOAD_TIMEOUT_PADDING_MS: Long = 3_000L
     private const val RELOAD_TOLERANCE_MS: Long = 250L
     private const val REGULAR_PROJECTILE_WAIT_MS: Long = 8_000L
+    private const val GHOST_STRESS_CYCLES: Int = 6
+    private const val GHOST_STRESS_CYCLE_TICKS: Int = 25
     private const val EXPLOSION_WAIT_MS: Long = 15_000L
     private const val SHOOT_RETRY_INTERVAL_MS: Long = 750L
     private const val EXPLOSIVE_SHOT_PITCH: Float = 45.0f
@@ -89,6 +94,7 @@ internal object FocusedSmokeClientHooks {
         WAIT_RELOAD,
         ATTEMPT_REGULAR_SHOT,
         WAIT_REGULAR_PROJECTILE,
+        GHOST_SHOT_STRESS,
         SWITCH_EXPLOSIVE,
         ATTEMPT_EXPLOSIVE_SHOT,
         WAIT_EXPLOSION,
@@ -113,6 +119,10 @@ internal object FocusedSmokeClientHooks {
     private var refitLaserPreviewTriggered: Boolean = false
     private var refitExpectedAttachmentId: String? = null
     private var reloadStartedAtMs: Long = 0L
+    private var reloadTimingScripted: Boolean = false
+    private var ghostStressTick: Int = -1
+    private var ghostStressClientShots: Int = 0
+    private var reloadStartAmmo: Int = 0
     private var expectedReloadDurationMs: Long = 0L
     private var reloadGunId: String? = null
 
@@ -165,6 +175,7 @@ internal object FocusedSmokeClientHooks {
             Step.WAIT_RELOAD -> handleWaitReload(player)
             Step.ATTEMPT_REGULAR_SHOT -> handleAttemptRegularShot(player)
             Step.WAIT_REGULAR_PROJECTILE -> handleWaitRegularProjectile()
+            Step.GHOST_SHOT_STRESS -> handleGhostShotStress(player)
             Step.SWITCH_EXPLOSIVE -> handleSwitchExplosive(player)
             Step.ATTEMPT_EXPLOSIVE_SHOT -> handleAttemptExplosiveShot(player)
             Step.WAIT_EXPLOSION -> handleWaitExplosion()
@@ -630,6 +641,11 @@ internal object FocusedSmokeClientHooks {
             step = Step.FAILED
             return
         }
+        if (iGun.useInventoryAmmo(stack)) {
+            // 背包直读弹药的枪（如加特林）没有换弹流程
+            transition(Step.ATTEMPT_REGULAR_SHOT, "RELOAD_SKIPPED reason=inventory_ammo gun=${iGun.getGunId(stack)}")
+            return
+        }
         val operator = IGunOperator.fromLivingEntity(player)
         if (operator.getSynDrawCoolDown() != 0L || operator.getSynReloadState().stateType.isReloading() || operator.getSynIsBolting()) {
             if (elapsedMs() > GEAR_TIMEOUT_MS) {
@@ -664,6 +680,9 @@ internal object FocusedSmokeClientHooks {
         TACZNetworkHandler.sendToServer(ClientMessagePlayerReload())
         LegacyClientGunAnimationDriver.triggerIfInitialized(stack, GunAnimationConstant.INPUT_RELOAD)
         reloadStartedAtMs = System.currentTimeMillis()
+        // 由数据脚本 tick_reload 驱动的换弹（如逐发装填的霰弹枪）时长由脚本参数决定，无法用 feed/cooldown 推算
+        reloadTimingScripted = GunScriptHooks.find(gunData, "tick_reload") != null
+        reloadStartAmmo = currentAmmo
         expectedReloadDurationMs = expectedMs
         reloadGunId = iGun.getGunId(stack).toString()
         transition(
@@ -684,6 +703,16 @@ internal object FocusedSmokeClientHooks {
                 actualMs,
                 deltaMs,
             )
+            if (reloadTimingScripted) {
+                val ammoAfter = (player.heldItemMainhand.item as? IGun)?.getCurrentAmmoCount(player.heldItemMainhand) ?: -1
+                if (ammoAfter <= reloadStartAmmo) {
+                    FocusedSmokeRuntime.markFailure("scripted_reload_no_ammo_added")
+                    step = Step.FAILED
+                    return
+                }
+                transition(Step.ATTEMPT_REGULAR_SHOT, "RELOAD_TIMING_SKIPPED reason=scripted ammo=${reloadStartAmmo}->${ammoAfter} actualMs=$actualMs")
+                return
+            }
             if (abs(deltaMs) > RELOAD_TOLERANCE_MS) {
                 FocusedSmokeRuntime.markFailure("reload_timing_delta_${deltaMs}")
                 step = Step.FAILED
@@ -771,6 +800,11 @@ internal object FocusedSmokeClientHooks {
             FocusedSmokeRuntime.hasObservedExpectedRegularFireCount() &&
             FocusedSmokeRuntime.hitTargetSatisfied()
         ) {
+            if (FocusedSmokeRuntime.ghostShotStressEnabled && ghostStressTick < 0) {
+                ghostStressTick = 0
+                transition(Step.GHOST_SHOT_STRESS, "GHOST_STRESS_BEGIN cycles=$GHOST_STRESS_CYCLES")
+                return
+            }
             if (plan.explosiveGunId == null) {
                 finalizeRun()
             } else {
@@ -789,6 +823,54 @@ internal object FocusedSmokeClientHooks {
             }
             FocusedSmokeRuntime.markFailure(reason)
             step = Step.FAILED
+        }
+    }
+
+    /**
+     * Ghost shot 压力测试：复现真实输入路径的时序（停止疾跑并发包后立即尝试开火、切到同款枪后立即开火），
+     * 客户端只有在本地判定成功时才会发送射击包，因此服务端任何非 SUCCESS 的结果都意味着
+     * “客户端播放了开火动画，但服务端没有发射子弹”。
+     */
+    private fun handleGhostShotStress(player: EntityPlayerSP) {
+        val operator = IGunOperator.fromLivingEntity(player)
+        val cycle = ghostStressTick / GHOST_STRESS_CYCLE_TICKS
+        val phaseTick = ghostStressTick % GHOST_STRESS_CYCLE_TICKS
+        if (cycle >= GHOST_STRESS_CYCLES) {
+            KeyBinding.setKeyBindState(Minecraft.getMinecraft().gameSettings.keyBindForward.keyCode, false)
+            player.isSprinting = false
+            TACZLegacy.logger.info("[FocusedSmoke] GHOST_STRESS_DONE clientShots={}", ghostStressClientShots)
+            ghostStressTick = Int.MAX_VALUE
+            FocusedSmokeRuntime.notifyGhostStressCompleted()
+            handleWaitRegularProjectile()
+            return
+        }
+        ghostStressTick++
+        val sprintCycle = cycle % 2 == 0
+        val forwardKey = Minecraft.getMinecraft().gameSettings.keyBindForward
+        if (sprintCycle) {
+            // 前 10 tick 按住前进并疾跑（疾跑状态由原版 EntityPlayerSP 自动同步给服务端），
+            // 之后松开前进并按住开火（与 LegacyClientPlayerGunBridge.processShootInput 相同的处理顺序）
+            if (phaseTick < 10) {
+                KeyBinding.setKeyBindState(forwardKey.keyCode, true)
+                player.isSprinting = true
+                return
+            }
+            if (phaseTick == 10) {
+                KeyBinding.setKeyBindState(forwardKey.keyCode, false)
+            }
+        } else if (phaseTick == 0) {
+            // 在两把同款枪之间切换后立即开火
+            val target = if (player.inventory.currentItem == 0) FocusedSmokeRuntime.GHOST_STRESS_GUN_SLOT else 0
+            switchHotbarSlot(player, target)
+        }
+        if (player.isSprinting) {
+            player.isSprinting = false
+            player.connection.sendPacket(CPacketEntityAction(player, CPacketEntityAction.Action.STOP_SPRINTING))
+        }
+        val result = LegacyClientShootCoordinator.attemptShoot(player, operator)
+        if (result == ShootResult.SUCCESS) {
+            ghostStressClientShots++
+            TACZLegacy.logger.info("[FocusedSmoke] GHOST_STRESS_CLIENT_SHOT cycle={} phaseTick={} sprintCycle={}", cycle, phaseTick, sprintCycle)
         }
     }
 
