@@ -11,6 +11,7 @@ import com.tacz.legacy.common.application.gunsmith.LegacyGunSmithingRuntime
 import com.tacz.legacy.common.inventory.GunSmithTableContainer
 import com.tacz.legacy.common.network.TACZNetworkHandler
 import com.tacz.legacy.common.network.message.client.ClientMessageGunSmithCraft
+import com.tacz.legacy.common.resource.TACZGunPackPresentation
 import com.tacz.legacy.common.resource.TACZGunPackRuntimeRegistry
 import net.minecraft.client.gui.GuiButton
 import net.minecraft.client.gui.GuiConfirmOpenLink
@@ -22,6 +23,7 @@ import net.minecraft.client.resources.I18n
 import net.minecraft.client.util.ITooltipFlag
 import net.minecraft.entity.player.InventoryPlayer
 import net.minecraft.item.ItemStack
+import net.minecraftforge.oredict.OreDictionary
 import net.minecraft.util.ResourceLocation
 import net.minecraftforge.fml.relauncher.Side
 import net.minecraftforge.fml.relauncher.SideOnly
@@ -506,8 +508,8 @@ internal class GunSmithTableScreen(
     private fun renderPreviewItem(mouseX: Int, mouseY: Int) {
         val recipe = selectedRecipe ?: return
         val centerX = guiLeft + 68.0f
-        // 非枪械模型按几何中心居中，放在预览区（搜索框与整合包信息之间）的正中
-        val centerY = guiTop + if (recipe.result.item is IGun) 92.0f else 77.0f
+        // 模型按几何中心居中，放在预览框（guiTop+35 ~ guiTop+115）的正中
+        val centerY = guiTop + 75.0f
         val previewYaw = -26.0f + ((centerX - mouseX) * 0.08f).coerceIn(-20.0f, 20.0f)
         val previewPitch = 12.0f + ((centerY - mouseY) * 0.05f).coerceIn(-12.0f, 12.0f)
         val rendered = TACZGuiModelPreviewRenderer.renderStackPreview(
@@ -555,53 +557,46 @@ internal class GunSmithTableScreen(
         }
     }
 
+    /**
+     * 枪包信息。可用高度只有预览框下方到“打开改装”按钮之间的约 42px，原先按正常字号绘制
+     * 最多 8 行会压到按钮下面甚至超出面板，这里与上游一样以半字号绘制并限制在可用区域内。
+     */
     private fun renderPackInfo() {
         val recipe = selectedRecipe ?: return
         val snapshot = TACZGunPackRuntimeRegistry.getSnapshot()
         val packInfo = snapshot.packInfos[recipe.sourceNamespace]
         val x = guiLeft + 6
-        var y = guiTop + 120
+        val top = guiTop + 119
+        val bottom = guiTop + 160
         if (packInfo == null) {
-            TACZAsciiFontHelper.drawString(fontRenderer, I18n.format("gui.tacz.gun_smith_table.error"), x, y, 0xAF0000)
+            TACZAsciiFontHelper.drawString(fontRenderer, I18n.format("gui.tacz.gun_smith_table.error"), x, top, 0xAF0000)
             return
         }
-        TACZAsciiFontHelper.drawString(fontRenderer, namespaceDisplayName(recipe.sourceNamespace), x, y, 0x555555)
-        y += 10
-        TACZAsciiFontHelper.drawString(fontRenderer, "v${packInfo.version}", x, y, 0x555555)
-        y += 10
-        val description = com.tacz.legacy.common.resource.TACZGunPackPresentation.localizedText(snapshot, packInfo.description)
-            ?: packInfo.description
+        val lines = mutableListOf<String>()
+        lines += "${namespaceDisplayName(recipe.sourceNamespace)} v${packInfo.version}"
+        val description = TACZGunPackPresentation.localizedText(snapshot, packInfo.description) ?: packInfo.description
         if (description.isNotBlank()) {
-            TACZAsciiFontHelper.listFormattedStringToWidth(fontRenderer, description, 122).take(3).forEach { line ->
-                TACZAsciiFontHelper.drawString(fontRenderer, line, x, y, 0x555555)
-                y += 10
-            }
+            lines += TACZAsciiFontHelper.listFormattedStringToWidth(fontRenderer, description, PACK_INFO_WRAP_WIDTH).take(3)
         }
-        TACZAsciiFontHelper.drawString(
-            fontRenderer,
-            I18n.format("gui.tacz.gun_smith_table.license") + packInfo.license,
-            x,
-            y,
-            0x555555,
-        )
-        y += 10
+        lines += I18n.format("gui.tacz.gun_smith_table.license") + packInfo.license
         if (packInfo.authors.isNotEmpty()) {
-            TACZAsciiFontHelper.drawString(
+            lines += TACZAsciiFontHelper.listFormattedStringToWidth(
                 fontRenderer,
                 I18n.format("gui.tacz.gun_smith_table.authors") + packInfo.authors.joinToString(", "),
-                x,
-                y,
-                0x555555,
-            )
-            y += 10
+                PACK_INFO_WRAP_WIDTH,
+            ).take(2)
         }
-        TACZAsciiFontHelper.drawString(
-            fontRenderer,
-            I18n.format("gui.tacz.gun_smith_table.date") + packInfo.date,
-            x,
-            y,
-            0x555555,
-        )
+        lines += I18n.format("gui.tacz.gun_smith_table.date") + packInfo.date
+
+        val lineHeight = 5
+        val maxLines = (bottom - top) / lineHeight
+        GlStateManager.pushMatrix()
+        GlStateManager.translate(x.toFloat(), top.toFloat(), 0f)
+        GlStateManager.scale(0.5f, 0.5f, 1f)
+        lines.take(maxLines).forEachIndexed { index, line ->
+            TACZAsciiFontHelper.drawString(fontRenderer, line, 0, index * lineHeight * 2, 0x555555)
+        }
+        GlStateManager.popMatrix()
     }
 
     private fun drawPackFilterPanel() {
@@ -615,9 +610,9 @@ internal class GunSmithTableScreen(
             val row = index / 2
             val x = guiLeft + 254 + 45 * column
             val y = guiTop + 62 + 17 * row
-            val matchingStacks = ingredient.ingredient.matchingStacks
+            val matchingStacks = displayStacks(ingredient)
             if (matchingStacks.isNotEmpty()) {
-                val stack = matchingStacks[(System.currentTimeMillis() / 1_000L % matchingStacks.size.toLong()).toInt()].copy()
+                val stack = matchingStacks[(System.currentTimeMillis() / 1_000L % matchingStacks.size.toLong()).toInt()]
                 // 背景层绘制时 GUI 物品光照处于关闭状态，不开启会导致 3D/自定义渲染物品发暗
                 RenderHelper.enableGUIStandardItemLighting()
                 itemRender.renderItemAndEffectIntoGUI(stack, x, y)
@@ -659,7 +654,7 @@ internal class GunSmithTableScreen(
             val x = guiLeft + 254 + 45 * column
             val y = guiTop + 62 + 17 * row
             if (mouseX in x until (x + 16) && mouseY in y until (y + 16)) {
-                val stacks = ingredient.ingredient.matchingStacks
+                val stacks = displayStacks(ingredient)
                 if (stacks.isNotEmpty()) {
                     val tooltipFlag = if (mc.gameSettings.advancedItemTooltips) ITooltipFlag.TooltipFlags.ADVANCED else ITooltipFlag.TooltipFlags.NORMAL
                     val tooltipLines = stacks.first().getTooltip(mc.player, tooltipFlag)
@@ -672,6 +667,19 @@ internal class GunSmithTableScreen(
             }
         }
     }
+
+    /**
+     * 用于显示的材料物品。矿物词典材料常带通配元数据（32767），直接渲染会显示为紫黑色的缺失材质，
+     * 这里与 JEI 一样换成元数据 0 再显示。
+     */
+    private fun displayStacks(ingredient: LegacyGunSmithIngredient): List<ItemStack> =
+        ingredient.ingredient.matchingStacks.map { stack ->
+            stack.copy().also { copy ->
+                if (copy.metadata == OreDictionary.WILDCARD_VALUE) {
+                    copy.itemDamage = 0
+                }
+            }
+        }
 
     private fun scrollResults(wheel: Int) {
         val maxPage = ((selectedRecipeList.size - 1).coerceAtLeast(0)) / RESULTS_PER_PAGE
@@ -864,6 +872,8 @@ internal class GunSmithTableScreen(
         const val BUTTON_PACK_PREV: Int = 13
         const val BUTTON_PACK_NEXT: Int = 14
         const val BUTTON_REFIT: Int = 15
+        /** 半字号绘制时的换行宽度（对应正常字号下约 122px） */
+        const val PACK_INFO_WRAP_WIDTH: Int = 244
         const val BUTTON_TAB_BASE: Int = 1000
         const val BUTTON_RESULT_BASE: Int = 2000
         const val BUTTON_PACK_BASE: Int = 3000

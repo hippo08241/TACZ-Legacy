@@ -89,7 +89,7 @@ internal object TACZGuiModelPreviewRenderer {
         if (stack.isEmpty || scale <= 0.0f) {
             return false
         }
-        val target = TACZGuiPreviewResolver.resolve(stack) ?: return false
+        val target = TACZGuiPreviewResolver.resolve(stack) ?: return debugFail(null, "resolve ${stack.item.registryName}")
         if (target.kind == TACZGuiPreviewResolver.PreviewKind.GUN && renderGunStackPreview(stack, target.displayId, centerX, centerY, scale, yaw, pitch, refitAttachmentType)) {
             return true
         }
@@ -113,11 +113,11 @@ internal object TACZGuiModelPreviewRenderer {
         pitch: Float,
         refitAttachmentType: AttachmentType,
     ): Boolean {
-        val display: GunDisplay = TACZClientAssetManager.getGunDisplay(displayId) ?: return false
-        val displayInstance = TACZClientAssetManager.getGunDisplayInstance(displayId) ?: return false
-        val model = displayInstance.gunModel ?: return false
-        val textureId = displayInstance.modelTexture ?: return false
-        val textureLocation = TACZClientAssetManager.getTextureLocation(textureId) ?: return false
+        val display: GunDisplay = TACZClientAssetManager.getGunDisplay(displayId) ?: return debugFail(displayId, "display")
+        val displayInstance = TACZClientAssetManager.getGunDisplayInstance(displayId) ?: return debugFail(displayId, "instance")
+        val model = displayInstance.gunModel ?: return debugFail(displayId, "model")
+        val textureId = displayInstance.modelTexture ?: return debugFail(displayId, "textureId")
+        val textureLocation = TACZClientAssetManager.getTextureLocation(textureId) ?: return debugFail(displayId, "texture $textureId")
         val scaleMultiplier = transformScaleMultiplier(display.transform?.scale, 1.0f)
 
         val mc = Minecraft.getMinecraft()
@@ -130,8 +130,24 @@ internal object TACZGuiModelPreviewRenderer {
         GlStateManager.rotate(180.0f, 0.0f, 0.0f, 1.0f)
         GlStateManager.rotate(yaw, 0.0f, 1.0f, 0.0f)
         GlStateManager.rotate(pitch, 1.0f, 0.0f, 0.0f)
-        applyPreviewViewMatrix(model, refitAttachmentType)
-        GlStateManager.translate(0.0f, 1.8f, 0.0f)
+        // 工作台预览（不对准某个配件槽位）时按枪模型几何中心居中，且不套用改装界面的视角矩阵
+        // （该矩阵带有平移，原先与固定的 1.8 偏移一起让枪画在预览框左上方、压到搜索框）
+        val gunCenter = if (refitAttachmentType == AttachmentType.NONE) {
+            display.modelLocation?.let(TACZClientAssetManager::getModel)?.let(::modelCenter)
+        } else {
+            null
+        }
+        if (gunCenter == null) {
+            applyPreviewViewMatrix(model, refitAttachmentType)
+        } else {
+            // 基岩模型的枪管朝 -Z，转 90° 让枪以侧面展示（与改装界面视角下的观感一致）
+            GlStateManager.rotate(GUN_PREVIEW_SIDE_YAW, 0.0f, 1.0f, 0.0f)
+        }
+        if (gunCenter != null) {
+            GlStateManager.translate(gunCenter[0] / 16.0f, 1.5f - gunCenter[1] / 16.0f, -gunCenter[2] / 16.0f)
+        } else {
+            GlStateManager.translate(0.0f, 1.8f, 0.0f)
+        }
         GlStateManager.scale(-1.0f, -1.0f, 1.0f)
 
         RenderHelper.enableGUIStandardItemLighting()
@@ -329,6 +345,14 @@ internal object TACZGuiModelPreviewRenderer {
         return center
     }
 
+    private val debugReported = HashSet<String>()
+    private fun debugFail(id: ResourceLocation?, reason: String): Boolean {
+        if (debugReported.add("$id/$reason")) {
+            com.tacz.legacy.TACZLegacy.logger.info("[PreviewDebug] gun preview failed id={} reason={}", id, reason)
+        }
+        return false
+    }
+
     private fun captureBloomIfSupported(
         texture: ResourceLocation,
         model: BedrockModel,
@@ -358,4 +382,5 @@ internal object TACZGuiModelPreviewRenderer {
     private fun averageScale(vector: Vector3f): Float = (vector.x + vector.y + vector.z) / 3.0f
 
     private val MATRIX_BUFFER = BufferUtils.createFloatBuffer(16)
+    private const val GUN_PREVIEW_SIDE_YAW: Float = 90.0f
 }
