@@ -71,8 +71,8 @@ public class LivingEntityShoot(
 
         // 检查是否正在换弹
         if (data.reloadStateType.isReloading()) return ShootResult.IS_RELOADING
-        // 检查是否在切枪
-        if (draw.getDrawCoolDown() != 0L) return ShootResult.IS_DRAWING
+        // 检查是否在切枪：服务端的切枪计时比客户端晚开始，允许 SYNC_GRACE_MS 的误差，避免幽灵射击
+        if (draw.getDrawCoolDown() > SYNC_GRACE_MS) return ShootResult.IS_DRAWING
         // 检查是否在拉栓
         if (data.isBolting) return ShootResult.IS_BOLTING
         // 检查是否在奔跑
@@ -133,6 +133,14 @@ public class LivingEntityShoot(
         }
 
         return ShootResult.SUCCESS
+    }
+
+    public companion object {
+        /**
+         * 客户端与服务端计时起点之差的容许量（毫秒）。服务端在收到请求后的下一个 tick（≤50ms）才开始计时，
+         * 再加上网络抖动，取两个 tick。
+         */
+        public const val SYNC_GRACE_MS: Long = 100L
     }
 
     /**

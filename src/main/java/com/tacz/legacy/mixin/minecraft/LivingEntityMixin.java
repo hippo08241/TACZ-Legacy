@@ -156,13 +156,25 @@ public abstract class LivingEntityMixin implements IGunOperator, KnockBackModifi
     public ShootResult shoot(Supplier<Float> pitch, Supplier<Float> yaw, long timestamp) {
         EntityLivingBase self = (EntityLivingBase) (Object) this;
         if (!self.world.isRemote) {
-            // 换弹/拉栓状态按服务端 tick 推进，而客户端在本地时间到达时就会结束并立刻开火。
-            // 在处理射击请求前按当前时间推进一次状态，避免换弹刚结束的第一发被判定为 IS_RELOADING 而被吞掉。
-            if (tacz$dataHolder.reloadStateType.isReloading()) {
+            // 客户端在本地独立计时换弹/拉栓，服务端则在收到请求后的下一个服务端 tick 才开始计时，
+            // 因此服务端总是比客户端晚结束（最多约一个 tick + 网络抖动）。若不处理，客户端认为换弹已结束
+            // 并播放开火动画，而服务端以 IS_RELOADING 拒绝，出现“只有动画没有子弹”的幽灵射击。
+            // 这里以 SYNC_GRACE_MS 的提前量推进一次状态：若在宽限时间内即可结束，就视为已经结束。
+            if (tacz$dataHolder.reloadStateType.isReloading() && tacz$dataHolder.reloadTimestamp > 0) {
+                long originalTimestamp = tacz$dataHolder.reloadTimestamp;
+                tacz$dataHolder.reloadTimestamp = originalTimestamp - LivingEntityShoot.SYNC_GRACE_MS;
                 tacz$reload.tickReload();
+                if (tacz$dataHolder.reloadStateType.isReloading()) {
+                    tacz$dataHolder.reloadTimestamp = originalTimestamp;
+                }
             }
-            if (tacz$dataHolder.isBolting) {
+            if (tacz$dataHolder.isBolting && tacz$dataHolder.boltTimestamp > 0) {
+                long originalTimestamp = tacz$dataHolder.boltTimestamp;
+                tacz$dataHolder.boltTimestamp = originalTimestamp - LivingEntityShoot.SYNC_GRACE_MS;
                 tacz$bolt.tickBolt();
+                if (tacz$dataHolder.isBolting) {
+                    tacz$dataHolder.boltTimestamp = originalTimestamp;
+                }
             }
         }
         return tacz$shoot.shoot(pitch, yaw, timestamp);
