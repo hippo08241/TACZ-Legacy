@@ -67,11 +67,15 @@ internal object TACZGuiPreviewResolver {
 
 internal object TACZGuiModelPreviewRenderer {
     private data class ResolvedPreviewModel(
+        val modelId: ResourceLocation,
         val modelData: TACZClientAssetManager.ModelData,
         val textureLocation: ResourceLocation,
         val scaleMultiplier: Float,
         val verticalOffset: Float,
     )
+
+    /** 模型几何中心（基岩版像素坐标），按 ModelData 缓存 */
+    private val modelCenters = java.util.WeakHashMap<TACZClientAssetManager.ModelData, FloatArray?>()
 
     fun renderStackPreview(
         stack: ItemStack,
@@ -191,6 +195,7 @@ internal object TACZGuiModelPreviewRenderer {
         val modelData = TACZClientAssetManager.getModel(modelId) ?: return null
         val textureLocation = TACZClientAssetManager.getTextureLocation(textureId) ?: return null
         return ResolvedPreviewModel(
+            modelId = modelId,
             modelData = modelData,
             textureLocation = textureLocation,
             scaleMultiplier = transformScaleMultiplier(display.transform?.scale, 1.0f),
@@ -205,6 +210,7 @@ internal object TACZGuiModelPreviewRenderer {
         val modelData = TACZClientAssetManager.getModel(modelId) ?: return null
         val textureLocation = TACZClientAssetManager.getTextureLocation(textureId) ?: return null
         return ResolvedPreviewModel(
+            modelId = modelId,
             modelData = modelData,
             textureLocation = textureLocation,
             scaleMultiplier = 1.0f,
@@ -219,6 +225,7 @@ internal object TACZGuiModelPreviewRenderer {
         val modelData = TACZClientAssetManager.getModel(modelId) ?: return null
         val textureLocation = TACZClientAssetManager.getTextureLocation(textureId) ?: return null
         return ResolvedPreviewModel(
+            modelId = modelId,
             modelData = modelData,
             textureLocation = textureLocation,
             scaleMultiplier = transformScaleMultiplier(display.transform?.scale, 0.95f),
@@ -233,6 +240,7 @@ internal object TACZGuiModelPreviewRenderer {
         val modelData = TACZClientAssetManager.getModel(modelId) ?: return null
         val textureLocation = TACZClientAssetManager.getTextureLocation(textureId) ?: return null
         return ResolvedPreviewModel(
+            modelId = modelId,
             modelData = modelData,
             textureLocation = textureLocation,
             scaleMultiplier = 1.0f,
@@ -248,7 +256,7 @@ internal object TACZGuiModelPreviewRenderer {
         yaw: Float,
         pitch: Float,
     ) {
-        val model = BedrockModel(resolved.modelData.pojo, resolved.modelData.version)
+        val model = TACZClientAssetManager.getStaticBlockModel(resolved.modelId) ?: return
         val mc = Minecraft.getMinecraft()
         mc.textureManager.bindTexture(resolved.textureLocation)
 
@@ -259,7 +267,13 @@ internal object TACZGuiModelPreviewRenderer {
         GlStateManager.rotate(180.0f, 0.0f, 0.0f, 1.0f)
         GlStateManager.rotate(yaw, 0.0f, 1.0f, 0.0f)
         GlStateManager.rotate(pitch, 1.0f, 0.0f, 0.0f)
-        GlStateManager.translate(0.0f, resolved.verticalOffset, 0.0f)
+        // 以模型几何包围盒中心为旋转/显示中心，避免非 1x1 模型（如 2 格宽的枪械工作台、2 格高的配件工作台）偏移
+        val center = modelCenter(resolved.modelData)
+        if (center != null) {
+            GlStateManager.translate(center[0] / 16.0f, 1.5f - center[1] / 16.0f, -center[2] / 16.0f)
+        } else {
+            GlStateManager.translate(0.0f, resolved.verticalOffset, 0.0f)
+        }
         GlStateManager.scale(-1.0f, -1.0f, 1.0f)
 
         RenderHelper.enableGUIStandardItemLighting()
@@ -284,6 +298,35 @@ internal object TACZGuiModelPreviewRenderer {
         GlStateManager.disableRescaleNormal()
         RenderHelper.disableStandardItemLighting()
         GlStateManager.popMatrix()
+    }
+
+    /**
+     * 计算模型所有方块（cube）的轴对齐包围盒中心，单位为基岩版像素。忽略骨骼旋转，作为显示用近似值已足够。
+     */
+    private fun modelCenter(modelData: TACZClientAssetManager.ModelData): FloatArray? {
+        if (modelCenters.containsKey(modelData)) {
+            return modelCenters[modelData]
+        }
+        val bones = modelData.pojo.geometryModelNew?.bones ?: modelData.pojo.geometryModelLegacy?.bones
+        val min = floatArrayOf(Float.MAX_VALUE, Float.MAX_VALUE, Float.MAX_VALUE)
+        val max = floatArrayOf(-Float.MAX_VALUE, -Float.MAX_VALUE, -Float.MAX_VALUE)
+        var found = false
+        bones.orEmpty().forEach { bone ->
+            bone.cubes.orEmpty().forEach { cube ->
+                val origin = cube.origin
+                val size = cube.size
+                if (origin != null && size != null && origin.size >= 3 && size.size >= 3) {
+                    for (axis in 0 until 3) {
+                        min[axis] = minOf(min[axis], origin[axis])
+                        max[axis] = maxOf(max[axis], origin[axis] + size[axis])
+                    }
+                    found = true
+                }
+            }
+        }
+        val center = if (found) FloatArray(3) { axis -> (min[axis] + max[axis]) / 2.0f } else null
+        modelCenters[modelData] = center
+        return center
     }
 
     private fun captureBloomIfSupported(

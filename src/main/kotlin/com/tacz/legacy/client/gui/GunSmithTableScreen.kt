@@ -1,5 +1,6 @@
 package com.tacz.legacy.client.gui
 
+import com.tacz.legacy.api.item.IGun
 import com.tacz.legacy.TACZLegacy
 import com.tacz.legacy.client.foundation.TACZAsciiFontHelper
 import com.tacz.legacy.common.application.refit.LegacyGunRefitRuntime
@@ -505,7 +506,8 @@ internal class GunSmithTableScreen(
     private fun renderPreviewItem(mouseX: Int, mouseY: Int) {
         val recipe = selectedRecipe ?: return
         val centerX = guiLeft + 68.0f
-        val centerY = guiTop + 92.0f
+        // 非枪械模型按几何中心居中，放在预览区（搜索框与整合包信息之间）的正中
+        val centerY = guiTop + if (recipe.result.item is IGun) 92.0f else 77.0f
         val previewYaw = -26.0f + ((centerX - mouseX) * 0.08f).coerceIn(-20.0f, 20.0f)
         val previewPitch = 12.0f + ((centerY - mouseY) * 0.05f).coerceIn(-12.0f, 12.0f)
         val rendered = TACZGuiModelPreviewRenderer.renderStackPreview(
@@ -616,7 +618,10 @@ internal class GunSmithTableScreen(
             val matchingStacks = ingredient.ingredient.matchingStacks
             if (matchingStacks.isNotEmpty()) {
                 val stack = matchingStacks[(System.currentTimeMillis() / 1_000L % matchingStacks.size.toLong()).toInt()].copy()
+                // 背景层绘制时 GUI 物品光照处于关闭状态，不开启会导致 3D/自定义渲染物品发暗
+                RenderHelper.enableGUIStandardItemLighting()
                 itemRender.renderItemAndEffectIntoGUI(stack, x, y)
+                RenderHelper.disableStandardItemLighting()
             }
             val need = ingredient.count
             val has = ingredientCounts[index] ?: 0

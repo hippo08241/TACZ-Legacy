@@ -10,6 +10,7 @@ import com.tacz.legacy.common.resource.TACZGunPackPresentation
 import com.tacz.legacy.common.resource.TACZGunPackRuntimeRegistry
 import net.minecraft.client.Minecraft
 import net.minecraft.client.renderer.GlStateManager
+import net.minecraft.client.renderer.block.model.ItemCameraTransforms
 import net.minecraft.client.renderer.block.model.ItemCameraTransforms.TransformType
 import net.minecraft.client.renderer.tileentity.TileEntityItemStackRenderer
 import net.minecraft.item.ItemStack
@@ -99,7 +100,12 @@ internal object TACZAttachmentItemRenderer : TileEntityItemStackRenderer() {
         GlStateManager.translate(0.5f, 1.5f, 0.5f)
         GlStateManager.rotate(180f, 0f, 0f, 1f)
 
-        GlStateManager.enableLighting()
+        // GUI 中的槽位贴图是平面图标，应与原版 2D 物品一样不受光照影响，否则会显得发暗
+        if (TACZPerspectiveAwareBakedModel.getCurrentTransformType() == ItemCameraTransforms.TransformType.GUI) {
+            GlStateManager.disableLighting()
+        } else {
+            GlStateManager.enableLighting()
+        }
         GlStateManager.enableRescaleNormal()
         GlStateManager.enableBlend()
         GlStateManager.tryBlendFuncSeparate(
