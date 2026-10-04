@@ -49,8 +49,9 @@ internal class GunSmithTableTileEntityRenderer : TileEntitySpecialRenderer<GunSm
         GlStateManager.pushMatrix()
         GlStateManager.translate(x.toFloat() + 0.5f, y.toFloat() + 1.5f, z.toFloat() + 0.5f)
         GlStateManager.rotate(180f, 0f, 0f, 1f)
-        // 与上游 GunSmithTableRenderer 一致：根据方块朝向旋转模型
-        GlStateManager.rotate(-resolveFacing(te).horizontalIndex * 90f, 0f, 1f, 0f)
+        // 根据方块朝向旋转模型。Z 轴 180° 翻转后 Y 轴旋转方向与世界坐标相反，
+        // 因此这里取正角度，使模型的延伸方向与 LegacyGunSmithTableBlock.extensionDirection 一致
+        GlStateManager.rotate(resolveFacing(te).horizontalIndex * 90f, 0f, 1f, 0f)
 
         GlStateManager.enableLighting()
         GlStateManager.enableRescaleNormal()

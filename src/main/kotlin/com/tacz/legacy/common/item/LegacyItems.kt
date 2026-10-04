@@ -916,6 +916,11 @@ internal class LegacyBlockItem(block: net.minecraft.block.Block) : ItemBlock(blo
         hitZ: Float,
         newState: IBlockState,
     ): Boolean {
+        // 多方块工作台：附属方块的位置必须可放置，否则整体不放置（不消耗物品）
+        val workbench = block as? LegacyGunSmithTableBlock
+        if (workbench != null && !workbench.canPlaceExtension(world, pos, newState.getValue(LegacyGunSmithTableBlock.FACING))) {
+            return false
+        }
         val placed = super.placeBlockAt(stack, player, world, pos, side, hitX, hitY, hitZ, newState)
         if (!placed) {
             return false

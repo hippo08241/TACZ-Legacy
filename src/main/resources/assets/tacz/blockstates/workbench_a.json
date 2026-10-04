@@ -1,15 +1,27 @@
 {
   "variants": {
-    "facing=north": {
+    "facing=north,part=main": {
       "model": "tacz:gun_smith_table"
     },
-    "facing=south": {
+    "facing=north,part=extension": {
       "model": "tacz:gun_smith_table"
     },
-    "facing=west": {
+    "facing=south,part=main": {
       "model": "tacz:gun_smith_table"
     },
-    "facing=east": {
+    "facing=south,part=extension": {
+      "model": "tacz:gun_smith_table"
+    },
+    "facing=west,part=main": {
+      "model": "tacz:gun_smith_table"
+    },
+    "facing=west,part=extension": {
+      "model": "tacz:gun_smith_table"
+    },
+    "facing=east,part=main": {
+      "model": "tacz:gun_smith_table"
+    },
+    "facing=east,part=extension": {
       "model": "tacz:gun_smith_table"
     }
   }

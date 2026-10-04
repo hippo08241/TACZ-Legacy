@@ -13,6 +13,7 @@ import com.tacz.legacy.common.item.LegacyBlockItem
 import net.minecraft.block.BlockContainer
 import net.minecraft.block.BlockHorizontal
 import net.minecraft.block.properties.PropertyDirection
+import net.minecraft.block.properties.PropertyEnum
 import net.minecraft.block.state.BlockStateContainer
 import net.minecraft.block.SoundType
 import net.minecraft.block.material.Material
@@ -27,6 +28,7 @@ import net.minecraft.tileentity.TileEntity
 import net.minecraft.util.EnumBlockRenderType
 import net.minecraft.util.EnumFacing
 import net.minecraft.util.EnumHand
+import net.minecraft.util.IStringSerializable
 import net.minecraft.util.Mirror
 import net.minecraft.util.NonNullList
 import net.minecraft.util.ResourceLocation
@@ -40,10 +42,11 @@ import net.minecraftforge.registries.IForgeRegistry
 import java.util.Random
 
 internal object LegacyBlocks {
-    internal val GUN_SMITH_TABLE: LegacyGunSmithTableBlock = LegacyGunSmithTableBlock("gun_smith_table")
-    internal val WORKBENCH_A: LegacyGunSmithTableBlock = LegacyGunSmithTableBlock("workbench_a")
-    internal val WORKBENCH_B: LegacyGunSmithTableBlock = LegacyGunSmithTableBlock("workbench_b")
-    internal val WORKBENCH_C: LegacyGunSmithTableBlock = LegacyGunSmithTableBlock("workbench_c")
+    // 与枪包 index 中的约定一致：workbench_a = 1x1x1，workbench_b / gun_smith_table = 2x1x1，workbench_c = 1x2x1
+    internal val GUN_SMITH_TABLE: LegacyGunSmithTableBlock = LegacyGunSmithTableBlock("gun_smith_table", WorkbenchLayout.WIDE)
+    internal val WORKBENCH_A: LegacyGunSmithTableBlock = LegacyGunSmithTableBlock("workbench_a", WorkbenchLayout.SINGLE)
+    internal val WORKBENCH_B: LegacyGunSmithTableBlock = LegacyGunSmithTableBlock("workbench_b", WorkbenchLayout.WIDE)
+    internal val WORKBENCH_C: LegacyGunSmithTableBlock = LegacyGunSmithTableBlock("workbench_c", WorkbenchLayout.TALL)
     internal val TARGET: LegacyTargetBlock = LegacyTargetBlock("target")
     internal val STATUE: LegacyStatueBlock = LegacyStatueBlock("statue")
 
@@ -79,19 +82,43 @@ internal abstract class LegacyBaseBlock(path: String, material: Material, soundT
     override fun isFullCube(state: IBlockState): Boolean = false
 }
 
-internal class LegacyGunSmithTableBlock(path: String) : LegacyBaseBlock(path, Material.WOOD, SoundType.WOOD) {
+/** 工作台占用的方块形状（与模型尺寸一致） */
+internal enum class WorkbenchLayout {
+    /** 1x1x1 */
+    SINGLE,
+    /** 2x1x1：主方块 + 侧面的附属方块 */
+    WIDE,
+    /** 1x2x1：主方块 + 上方的附属方块 */
+    TALL,
+}
+
+/** 多方块工作台的部位：主方块持有 TileEntity，附属方块只负责碰撞与交互 */
+internal enum class WorkbenchPart(private val serializedName: String) : IStringSerializable {
+    MAIN("main"),
+    EXTENSION("extension"),
+    ;
+
+    override fun getName(): String = serializedName
+}
+
+internal class LegacyGunSmithTableBlock(path: String, internal val layout: WorkbenchLayout) : LegacyBaseBlock(path, Material.WOOD, SoundType.WOOD) {
     init {
-        defaultState = blockState.baseState.withProperty(FACING, EnumFacing.NORTH)
+        defaultState = blockState.baseState
+            .withProperty(FACING, EnumFacing.NORTH)
+            .withProperty(PART, WorkbenchPart.MAIN)
     }
 
     override fun getRenderType(state: IBlockState): EnumBlockRenderType = EnumBlockRenderType.ENTITYBLOCK_ANIMATED
 
-    override fun createBlockState(): BlockStateContainer = BlockStateContainer(this, FACING)
+    override fun createBlockState(): BlockStateContainer = BlockStateContainer(this, FACING, PART)
 
     override fun getStateFromMeta(meta: Int): IBlockState =
-        defaultState.withProperty(FACING, EnumFacing.byHorizontalIndex(meta and 3))
+        defaultState
+            .withProperty(FACING, EnumFacing.byHorizontalIndex(meta and 3))
+            .withProperty(PART, if (meta and 4 != 0) WorkbenchPart.EXTENSION else WorkbenchPart.MAIN)
 
-    override fun getMetaFromState(state: IBlockState): Int = state.getValue(FACING).horizontalIndex
+    override fun getMetaFromState(state: IBlockState): Int =
+        state.getValue(FACING).horizontalIndex or (if (state.getValue(PART) == WorkbenchPart.EXTENSION) 4 else 0)
 
     override fun withRotation(state: IBlockState, rot: Rotation): IBlockState =
         state.withProperty(FACING, rot.rotate(state.getValue(FACING)))
@@ -109,7 +136,94 @@ internal class LegacyGunSmithTableBlock(path: String) : LegacyBaseBlock(path, Ma
         meta: Int,
         placer: EntityLivingBase,
         hand: EnumHand,
-    ): IBlockState = defaultState.withProperty(FACING, placer.horizontalFacing)
+    ): IBlockState = defaultState.withProperty(FACING, placer.horizontalFacing).withProperty(PART, WorkbenchPart.MAIN)
+
+    // ---- 多方块结构 ----
+
+    /**
+     * 附属方块相对主方块的方向；单方块工作台返回 null。
+     * 宽工作台的模型在渲染坐标中向 facing.rotateY() 一侧延伸（已用游戏内俯视截图确认）。
+     */
+    internal fun extensionDirection(facing: EnumFacing): EnumFacing? = when (layout) {
+        WorkbenchLayout.SINGLE -> null
+        WorkbenchLayout.WIDE -> facing.rotateY()
+        WorkbenchLayout.TALL -> EnumFacing.UP
+    }
+
+    /** 由任意部位的坐标求主方块坐标 */
+    internal fun mainPos(pos: BlockPos, state: IBlockState): BlockPos {
+        if (state.getValue(PART) == WorkbenchPart.MAIN) {
+            return pos
+        }
+        val direction = extensionDirection(state.getValue(FACING)) ?: return pos
+        return pos.offset(direction.opposite)
+    }
+
+    /** 与该部位配对的另一部位坐标；单方块工作台返回 null */
+    private fun partnerPos(pos: BlockPos, state: IBlockState): BlockPos? {
+        val direction = extensionDirection(state.getValue(FACING)) ?: return null
+        return if (state.getValue(PART) == WorkbenchPart.MAIN) pos.offset(direction) else pos.offset(direction.opposite)
+    }
+
+    private fun isPartner(world: IBlockAccess, pos: BlockPos, state: IBlockState): Boolean {
+        val partner = partnerPos(pos, state) ?: return true
+        val partnerState = world.getBlockState(partner)
+        return partnerState.block === this &&
+            partnerState.getValue(PART) != state.getValue(PART) &&
+            partnerState.getValue(FACING) == state.getValue(FACING)
+    }
+
+    /** 放置前检查附属方块位置是否可用（由物品调用） */
+    internal fun canPlaceExtension(world: World, mainPos: BlockPos, facing: EnumFacing): Boolean {
+        val direction = extensionDirection(facing) ?: return true
+        val extensionPos = mainPos.offset(direction)
+        if (extensionPos.y >= world.height) {
+            return false
+        }
+        val existing = world.getBlockState(extensionPos)
+        return existing.block.isReplaceable(world, extensionPos)
+    }
+
+    override fun onBlockPlacedBy(world: World, pos: BlockPos, state: IBlockState, placer: EntityLivingBase, stack: ItemStack) {
+        super.onBlockPlacedBy(world, pos, state, placer, stack)
+        if (state.getValue(PART) != WorkbenchPart.MAIN) {
+            return
+        }
+        val direction = extensionDirection(state.getValue(FACING)) ?: return
+        world.setBlockState(pos.offset(direction), state.withProperty(PART, WorkbenchPart.EXTENSION), 3)
+    }
+
+    /** 与原版床相同：另一部位消失时自身也随之移除；只有主方块会掉落物品 */
+    override fun neighborChanged(state: IBlockState, worldIn: World, pos: BlockPos, blockIn: net.minecraft.block.Block, fromPos: BlockPos) {
+        if (isPartner(worldIn, pos, state)) {
+            return
+        }
+        if (state.getValue(PART) == WorkbenchPart.MAIN) {
+            if (!worldIn.isRemote) {
+                dropBlockAsItem(worldIn, pos, state, 0)
+            }
+        }
+        worldIn.setBlockToAir(pos)
+    }
+
+    override fun onBlockHarvested(worldIn: World, pos: BlockPos, state: IBlockState, player: EntityPlayer) {
+        // 创造模式拆附属方块时，静默移除主方块，避免触发主方块的掉落
+        if (player.capabilities.isCreativeMode && state.getValue(PART) == WorkbenchPart.EXTENSION) {
+            val main = mainPos(pos, state)
+            if (worldIn.getBlockState(main).block === this) {
+                worldIn.setBlockToAir(main)
+            }
+        }
+        super.onBlockHarvested(worldIn, pos, state, player)
+    }
+
+    override fun getPushReaction(state: IBlockState): net.minecraft.block.material.EnumPushReaction =
+        if (layout == WorkbenchLayout.SINGLE) super.getPushReaction(state) else net.minecraft.block.material.EnumPushReaction.BLOCK
+
+    override fun hasTileEntity(state: IBlockState): Boolean = state.getValue(PART) == WorkbenchPart.MAIN
+
+    override fun createTileEntity(world: World, state: IBlockState): TileEntity? =
+        if (state.getValue(PART) == WorkbenchPart.MAIN) createNewTileEntity(world, getMetaFromState(state)) else null
 
     override fun createNewTileEntity(worldIn: World, meta: Int): TileEntity = GunSmithTableTileEntity().apply {
         blockId = GunSmithTableTileEntity.resolveWorkbenchBlockId(requireNotNull(this@LegacyGunSmithTableBlock.registryName))
@@ -129,19 +243,24 @@ internal class LegacyGunSmithTableBlock(path: String) : LegacyBaseBlock(path, Ma
         if (worldIn.isRemote) {
             return true
         }
-        if (worldIn.getTileEntity(pos) !is GunSmithTableTileEntity) {
+        // 点击附属方块时打开主方块的界面
+        val main = mainPos(pos, state)
+        if (worldIn.getTileEntity(main) !is GunSmithTableTileEntity) {
             return true
         }
-        playerIn.openGui(TACZLegacy, LegacyGuiIds.GUN_SMITH_TABLE, worldIn, pos.x, pos.y, pos.z)
-        worldIn.playSound(null, pos, SoundEvents.BLOCK_WOOD_PLACE, SoundCategory.BLOCKS, 1.0f, 1.0f)
+        playerIn.openGui(TACZLegacy, LegacyGuiIds.GUN_SMITH_TABLE, worldIn, main.x, main.y, main.z)
+        worldIn.playSound(null, main, SoundEvents.BLOCK_WOOD_PLACE, SoundCategory.BLOCKS, 1.0f, 1.0f)
         return true
     }
 
     /**
      * 掉落物需要携带 TileEntity 中的 BlockId，否则枪包工作台（如配件工作台）被破坏后
-     * 会变回没有 BlockId 的默认物品。
+     * 会变回没有 BlockId 的默认物品。附属方块不掉落（由主方块负责）。
      */
     override fun getDrops(drops: NonNullList<ItemStack>, world: IBlockAccess, pos: BlockPos, state: IBlockState, fortune: Int) {
+        if (state.getValue(PART) != WorkbenchPart.MAIN) {
+            return
+        }
         drops += createStackWithBlockId(world.getTileEntity(pos) as? GunSmithTableTileEntity)
     }
 
@@ -151,7 +270,7 @@ internal class LegacyGunSmithTableBlock(path: String) : LegacyBaseBlock(path, Ma
         world: World,
         pos: BlockPos,
         player: EntityPlayer,
-    ): ItemStack = createStackWithBlockId(world.getTileEntity(pos) as? GunSmithTableTileEntity)
+    ): ItemStack = createStackWithBlockId(world.getTileEntity(mainPos(pos, state)) as? GunSmithTableTileEntity)
 
     // 推迟方块移除，使 getDrops 在 harvestBlock 中仍能读取到 TileEntity（与原版花盆相同的做法）。
     override fun removedByPlayer(
@@ -161,7 +280,7 @@ internal class LegacyGunSmithTableBlock(path: String) : LegacyBaseBlock(path, Ma
         player: EntityPlayer,
         willHarvest: Boolean,
     ): Boolean {
-        if (willHarvest) {
+        if (willHarvest && state.getValue(PART) == WorkbenchPart.MAIN) {
             return true
         }
         return super.removedByPlayer(state, world, pos, player, willHarvest)
@@ -176,7 +295,9 @@ internal class LegacyGunSmithTableBlock(path: String) : LegacyBaseBlock(path, Ma
         stack: ItemStack,
     ) {
         super.harvestBlock(worldIn, player, pos, state, te, stack)
-        worldIn.setBlockToAir(pos)
+        if (state.getValue(PART) == WorkbenchPart.MAIN) {
+            worldIn.setBlockToAir(pos)
+        }
     }
 
     private fun createStackWithBlockId(tile: GunSmithTableTileEntity?): ItemStack {
@@ -190,6 +311,7 @@ internal class LegacyGunSmithTableBlock(path: String) : LegacyBaseBlock(path, Ma
 
     internal companion object {
         internal val FACING: PropertyDirection = BlockHorizontal.FACING
+        internal val PART: PropertyEnum<WorkbenchPart> = PropertyEnum.create("part", WorkbenchPart::class.java)
     }
 }
 
