@@ -1,0 +1,76 @@
+name: Build
+
+on:
+  push:
+    branches: [ master ]
+    tags: [ 'v*' ]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Gradle 자체는 Java 17로 실행하고, Minecraft 1.12.2 컴파일에는 toolchain의 Azul Java 8을 사용한다
+      - name: Set up Java 8 (toolchain) and 17 (Gradle)
+        uses: actions/setup-java@v4
+        with:
+          distribution: zulu
+          java-version: |
+            8
+            17
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Build and test
+        run: ./gradlew build --no-daemon -Porg.gradle.java.installations.fromEnv=JAVA_HOME_8_X64
+
+      - name: Upload mod jar
+        uses: actions/upload-artifact@v4
+        with:
+          name: TACZ-Legacy-${{ github.sha }}
+          path: |
+            build/libs/*.jar
+            !build/libs/*-dev.jar
+            !build/libs/*-sources.jar
+          if-no-files-found: error
+
+      - name: Upload test reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports
+          path: build/reports/tests/
+          if-no-files-found: ignore
+
+  release:
+    # v* 태그를 푸시하면 빌드된 jar를 GitHub Release에 첨부한다
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download mod jar
+        uses: actions/download-artifact@v4
+        with:
+          name: TACZ-Legacy-${{ github.sha }}
+          path: dist
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.jar
+          generate_release_notes: true
