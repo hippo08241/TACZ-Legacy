@@ -726,6 +726,9 @@ internal object FocusedSmokeRuntime {
         if (craftEnabled && !craftCompleted) {
             return
         }
+        if (multipartTestEnabled && !multipartCompleted) {
+            return
+        }
         if (requireTracerFrameEnabled && !tracerFrameObserved) {
             return
         }
@@ -964,6 +967,115 @@ internal object FocusedSmokeRuntime {
             iGun.setBulletInBarrel(stack, true)
         }
         return stack
+    }
+
+    // ---- 多部件实体伤害测试：对末影龙打一发（可穿透的）子弹和一次爆炸，确认每次只结算一次伤害 ----
+
+    private val multipartTestEnabled: Boolean
+        get() = java.lang.Boolean.getBoolean("tacz.focusedSmoke.multipartTest")
+
+    @Volatile
+    private var multipartCompleted: Boolean = false
+    private var multipartStep: Int = 0
+    private var multipartTicks: Int = 0
+    private var multipartDragon: net.minecraft.entity.boss.EntityDragon? = null
+    private var multipartHealthBefore: Float = 0.0f
+
+    @SubscribeEvent
+    fun onServerTickMultipart(event: net.minecraftforge.fml.common.gameevent.TickEvent.ServerTickEvent) {
+        if (!enabled || !multipartTestEnabled || multipartCompleted || !serverGearReady ||
+            event.phase != net.minecraftforge.fml.common.gameevent.TickEvent.Phase.END
+        ) {
+            return
+        }
+        val server = net.minecraftforge.fml.common.FMLCommonHandler.instance().minecraftServerInstance ?: return
+        val player = focusedPlayerId?.let(server.playerList::getPlayerByUUID) ?: return
+        val world = player.serverWorld
+        multipartTicks++
+        multipartDragon?.let { dragon -> layoutDragonParts(dragon, player) }
+        when (multipartStep) {
+            0 -> {
+                val look = player.lookVec
+                val horizontal = net.minecraft.util.math.Vec3d(look.x, 0.0, look.z).normalize()
+                // NoAI 时末影龙不会更新部件位置（主世界的悬停 AI 又会算出 NaN 坐标），由测试每 tick 手动摆放部件
+                val dragon = net.minecraft.entity.boss.EntityDragon(world).apply {
+                    setNoAI(true)
+                    // 模拟没有无敌帧的模组生物（寄生虫模组等）：部件转发的每次伤害都会全额生效
+                    if (java.lang.Boolean.getBoolean("tacz.focusedSmoke.multipartNoIframes")) {
+                        maxHurtResistantTime = 0
+                    }
+                    setLocationAndAngles(player.posX + horizontal.x * 14.0, player.posY + 2.0, player.posZ + horizontal.z * 14.0, player.rotationYaw + 180.0f, 0.0f)
+                }
+                world.spawnEntity(dragon)
+                multipartDragon = dragon
+                multipartStep = 1
+                multipartTicks = 0
+            }
+            1 -> if (multipartTicks >= 20) {
+                val dragon = multipartDragon ?: return markFailure("multipart_dragon_missing")
+                val body = dragon.dragonPartBody
+                log("MULTIPART_DRAGON health=${dragon.health} parts=${dragon.parts.orEmpty().joinToString { "${(it as? net.minecraft.entity.MultiPartEntityPart)?.partName}@%.1f,%.1f,%.1f".format(it.posX, it.posY, it.posZ) }}")
+                val gunId = plannedScenario?.regularGunId ?: return markFailure("multipart_no_gun")
+                val gunData = GunDataAccessor.getGunData(gunId) ?: return markFailure("multipart_no_gun_data")
+                val bullet = com.tacz.legacy.common.entity.EntityKineticBullet(world, player, gunData.bulletData, gunId, gunId, gunData.ammoId ?: return markFailure("multipart_no_ammo"), false)
+                // 模拟高穿透弹药：穿透次数足够时子弹会穿过多个重叠的部件
+                val pierce = System.getProperty("tacz.focusedSmoke.multipartPierce", "10").toInt()
+                com.tacz.legacy.common.entity.EntityKineticBullet::class.java.getDeclaredField("pierce").apply { isAccessible = true }.setInt(bullet, pierce)
+                val bodyCenter = net.minecraft.util.math.Vec3d(body.posX, body.posY + body.height * 0.5, body.posZ)
+                val dir = bodyCenter.subtract(bullet.posX, bullet.posY, bullet.posZ).normalize()
+                bullet.shoot(dir.x, dir.y, dir.z, gunData.bulletData.speed, 0.0f)
+                multipartHealthBefore = dragon.health
+                world.spawnEntity(bullet)
+                log("MULTIPART_BULLET_FIRED gun=$gunId damage=${gunData.bulletData.damage} pierce=$pierce")
+                multipartStep = 2
+                multipartTicks = 0
+            }
+            2 -> if (multipartTicks >= 20) {
+                val dragon = multipartDragon ?: return markFailure("multipart_dragon_missing")
+                val bulletDrop = multipartHealthBefore - dragon.health
+                log("MULTIPART_BULLET_RESULT healthDrop=${"%.2f".format(bulletDrop)}")
+                dragon.hurtResistantTime = 0
+                multipartHealthBefore = dragon.health
+                val body = dragon.dragonPartBody
+                com.tacz.legacy.common.entity.LegacyProjectileExplosionHelper.createExplosion(
+                    owner = player, exploder = player,
+                    x = body.posX, y = body.posY + body.height * 0.5, z = body.posZ,
+                    damage = 20.0f, radius = 4.0f, knockback = false, destroyBlock = false,
+                )
+                multipartStep = 3
+                multipartTicks = 0
+            }
+            3 -> if (multipartTicks >= 2) {
+                val dragon = multipartDragon ?: return markFailure("multipart_dragon_missing")
+                val explosionDrop = multipartHealthBefore - dragon.health
+                log("MULTIPART_EXPLOSION_RESULT damage=20 healthDrop=${"%.2f".format(explosionDrop)}")
+                dragon.setDead()
+                multipartCompleted = true
+                maybeLogPass()
+            }
+        }
+    }
+
+    /** 按原版末影龙面向玩家时的形状摆放部件：头-颈-身体-尾巴排成一列朝向玩家，两翼在身体两侧 */
+    private fun layoutDragonParts(dragon: net.minecraft.entity.boss.EntityDragon, player: EntityPlayerMP) {
+        val toPlayer = net.minecraft.util.math.Vec3d(player.posX - dragon.posX, 0.0, player.posZ - dragon.posZ).normalize()
+        val side = net.minecraft.util.math.Vec3d(-toPlayer.z, 0.0, toPlayer.x)
+        fun place(part: net.minecraft.entity.MultiPartEntityPart, forward: Double, lateral: Double) {
+            part.setLocationAndAngles(
+                dragon.posX + toPlayer.x * forward + side.x * lateral,
+                dragon.posY,
+                dragon.posZ + toPlayer.z * forward + side.z * lateral,
+                0.0f, 0.0f,
+            )
+        }
+        place(dragon.dragonPartHead, 5.5, 0.0)
+        place(dragon.dragonPartNeck, 3.5, 0.0)
+        place(dragon.dragonPartBody, 0.0, 0.0)
+        place(dragon.dragonPartTail1, -3.0, 0.0)
+        place(dragon.dragonPartTail2, -5.0, 0.0)
+        place(dragon.dragonPartTail3, -7.0, 0.0)
+        place(dragon.dragonPartWing1, 0.0, 4.0)
+        place(dragon.dragonPartWing2, 0.0, -4.0)
     }
 
     private fun spawnHitFeedbackTarget(player: EntityPlayerMP, regularGunId: ResourceLocation) {
