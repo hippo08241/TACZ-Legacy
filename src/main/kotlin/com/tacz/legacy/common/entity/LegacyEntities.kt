@@ -120,6 +120,10 @@ internal class EntityKineticBullet : EntityThrowable, IEntityAdditionalSpawnData
     private var bulletGravity: Float = 0.0f
     private var friction: Float = 0.01f
     private var pierce: Int = 1
+    /** 已被本子弹结算过伤害的实体（多部件实体按本体记录），保证一发子弹对同一目标只造成一次伤害 */
+    private val damagedTargetIds: MutableSet<Int> = HashSet()
+    /** 当前正在结算的命中所对应的本体（由 onUpdate 解析后交给 onImpact） */
+    private var pendingHitRoot: Entity? = null
     private var lifespan: Int = 200
     private var knockback: Float = 0.0f
     private var igniteEntity: Boolean = false
@@ -327,18 +331,20 @@ internal class EntityKineticBullet : EntityThrowable, IEntityAdditionalSpawnData
         when (result.typeOfHit) {
             RayTraceResult.Type.ENTITY -> {
                 val target = result.entityHit ?: return
+                val root = pendingHitRoot ?: MultiPartTargets.rootOf(target)
                 val hitPos = result.hitVec ?: Vec3d(target.posX, target.posY + target.height * 0.5, target.posZ)
-                // 射手本身不会被自己的子弹命中，也不应消耗穿透次数
-                if (target == thrower) return
-                val headShot = target is EntityLivingBase && isHeadShot(target, hitPos)
-                val feedback = applyDirectHitDamage(target, hitPos, headShot)
+                // 射手本身（包括射手的部件）不会被自己的子弹命中，也不应消耗穿透次数
+                if (target == thrower || root == thrower) return
+                // 部件命中不判定爆头：末影龙等实体已由部件自身区分弱点（头部部件全额伤害）
+                val headShot = target === root && target is EntityLivingBase && isHeadShot(target, hitPos)
+                val feedback = applyDirectHitDamage(target, root, hitPos, headShot)
                 if (hasExplosion) {
                     triggerExplosion(hitPos)
-                    emitHitFeedback(target, feedback)
+                    emitHitFeedback(root, feedback)
                     setDead()
                     return
                 }
-                emitHitFeedback(target, feedback)
+                emitHitFeedback(root, feedback)
                 pierce--
                 if (pierce <= 0) setDead()
             }
@@ -581,6 +587,7 @@ internal class EntityKineticBullet : EntityThrowable, IEntityAdditionalSpawnData
                 entityBoundingBox.expand(motionX, motionY, motionZ).grow(1.0),
             )
             val hitEntities = mutableListOf<Pair<Entity, Vec3d>>()
+            val candidates: List<Entity> = entitiesInRange
             for (entity in entitiesInRange) {
                 if (!entity.canBeCollidedWith()) continue
                 if (entity === thrower && ticksExisted < 5) continue
@@ -595,9 +602,17 @@ internal class EntityKineticBullet : EntityThrowable, IEntityAdditionalSpawnData
 
             // 处理实体命中
             for ((entity, hitVec) in hitEntities) {
+                // 多部件实体：同一发子弹只结算最先命中的那个部件；之前 tick 已命中的目标也不再重复结算
+                val root = MultiPartTargets.rootOf(entity, candidates)
+                if (root === thrower || !damagedTargetIds.add(root.entityId)) continue
                 val entityHitResult = RayTraceResult(entity, hitVec)
                 if (!net.minecraftforge.event.ForgeEventFactory.onProjectileImpact(this, entityHitResult)) {
-                    onImpact(entityHitResult)
+                    pendingHitRoot = root
+                    try {
+                        onImpact(entityHitResult)
+                    } finally {
+                        pendingHitRoot = null
+                    }
                 }
                 if (isDead) return
                 if (pierce < 1) {
@@ -663,29 +678,33 @@ internal class EntityKineticBullet : EntityThrowable, IEntityAdditionalSpawnData
         return previous + delta * 0.2f
     }
 
-    private fun applyDirectHitDamage(target: Entity, hitPosition: Vec3d, headShot: Boolean): HitFeedbackResult {
+    /**
+     * @param target 实际被命中的实体（可能是多部件实体的部件，伤害仍经由部件结算以保留弱点逻辑）
+     * @param root 伤害的实际承受者，无敌帧在它身上重置
+     */
+    private fun applyDirectHitDamage(target: Entity, root: Entity, hitPosition: Vec3d, headShot: Boolean): HitFeedbackResult {
         val totalDamage = resolveEffectiveDamageAt(hitPosition)
         if (totalDamage <= 0.0f) {
             return HitFeedbackResult(false, 0.0f, 1.0f, headShot)
         }
         val headShotDamage = if (headShot) totalDamage * headShotMultiplier else totalDamage
         val damageSplit = splitDamage(headShotDamage)
-        if (target is EntityLivingBase) {
-            target.hurtResistantTime = 0
+        if (root is EntityLivingBase) {
+            root.hurtResistantTime = 0
         }
         var applied = false
         if (damageSplit.first > 0.0f) {
             applied = target.attackEntityFrom(createBulletDamageSource(ignoreArmor = false, target = target), damageSplit.first) || applied
         }
         if (damageSplit.second > 0.0f) {
-            if (target is EntityLivingBase) {
-                target.hurtResistantTime = 0
+            if (root is EntityLivingBase) {
+                root.hurtResistantTime = 0
             }
             applied = target.attackEntityFrom(createBulletDamageSource(ignoreArmor = true, target = target), damageSplit.second) || applied
         }
-        applyImpactKnockback(target)
-        if (igniteEntity && !target.world.isRemote && LegacyConfigManager.common.igniteEntity) {
-            target.setFire(igniteEntityTime)
+        applyImpactKnockback(root)
+        if (igniteEntity && !root.world.isRemote && LegacyConfigManager.common.igniteEntity) {
+            root.setFire(igniteEntityTime)
         }
         return HitFeedbackResult(
             appliedDamage = applied,

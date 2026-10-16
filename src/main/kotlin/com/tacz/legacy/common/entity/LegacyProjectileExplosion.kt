@@ -113,8 +113,22 @@ internal class LegacyProjectileExplosion(
         ForgeEventFactory.onExplosionDetonate(world, this, nearbyEntities, doubledRadius.toDouble())
 
         val knockbackScale = (damagePower * radius / 500.0f).coerceAtLeast(0.0f).toDouble()
-        for (entity in nearbyEntities) {
+        // 多部件实体（末影龙等）的各部件都会出现在列表中且会把伤害转发给本体；
+        // 按距离从近到远处理，每个本体只结算一次（取离爆心最近的部件）。
+        // 有部件在范围内时本体自身不直接结算（末影龙本体会忽略非荆棘伤害，伤害必须经由部件）
+        val rootByEntity = nearbyEntities.associateWith { MultiPartTargets.rootOf(it, nearbyEntities) }
+        val ownersWithPartsInRange = rootByEntity.filter { (entity, root) -> entity !== root }.values.mapTo(HashSet()) { it.entityId }
+        val affectedRoots = HashSet<Int>()
+        val ordered = nearbyEntities.sortedBy { it.getDistanceSq(centerX, centerY, centerZ) }
+        for (entity in ordered) {
             if (entity.isImmuneToExplosions) {
+                continue
+            }
+            val root = rootByEntity.getValue(entity)
+            if (root === entity && entity.entityId in ownersWithPartsInRange) {
+                continue
+            }
+            if (!affectedRoots.add(root.entityId)) {
                 continue
             }
             val distanceRatio = if (doubledRadius <= 0.0f) {
