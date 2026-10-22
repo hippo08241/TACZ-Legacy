@@ -135,6 +135,19 @@ internal object FocusedSmokeClientHooks {
     private var reloadGunId: String? = null
 
     @SubscribeEvent
+    fun onClientTickStart(event: TickEvent.ClientTickEvent) {
+        // 换弹乱按测试期间：原版每 tick 会因窗口无焦点而清除 inGameHasFocus，在 tick 开始时重新置位
+        if (event.phase == TickEvent.Phase.START && savedMovementInput != null) {
+            val mc = Minecraft.getMinecraft()
+            // 测试世界里可能开着聊天界面，界面打开时输入处理会被跳过
+            if (mc.currentScreen != null) {
+                mc.currentScreen = null
+            }
+            mc.inGameHasFocus = true
+        }
+    }
+
+    @SubscribeEvent
     fun onClientTick(event: TickEvent.ClientTickEvent) {
         if (event.phase != TickEvent.Phase.END || !FocusedSmokeRuntime.enabled) {
             return
@@ -702,9 +715,75 @@ internal object FocusedSmokeClientHooks {
         )
     }
 
+    private var reloadSprintSpamTick: Int = 0
+    private var reloadSprintObserved: Boolean = false
+    private var savedMovementInput: net.minecraft.util.MovementInput? = null
+    private var spamForwardDown: Boolean = false
+
+    /** Xvfb 下模拟按键无法驱动原版移动输入，测试期间用固定的“前进”输入代替 */
+    private val spamMovementInput = object : net.minecraft.util.MovementInput() {
+        override fun updatePlayerMoveState() {
+            moveStrafe = 0.0f
+            moveForward = if (spamForwardDown) 1.0f else 0.0f
+            forwardKeyDown = spamForwardDown
+        }
+    }
+
+    /** 换弹期间反复按下/松开前进键与冲刺键，模拟玩家边换弹边乱按移动键 */
+    private fun spamSprintKeys(player: EntityPlayerSP, release: Boolean) {
+        val mc = Minecraft.getMinecraft()
+        val settings = mc.gameSettings
+        if (release) {
+            KeyBinding.setKeyBindState(settings.keyBindForward.keyCode, false)
+            KeyBinding.setKeyBindState(settings.keyBindSprint.keyCode, false)
+            mc.inGameHasFocus = false
+            savedMovementInput?.let { player.movementInput = it }
+            savedMovementInput = null
+            player.isSprinting = false
+            return
+        }
+        if (savedMovementInput == null) {
+            savedMovementInput = player.movementInput
+            player.movementInput = spamMovementInput
+        }
+        // Xvfb 下窗口没有焦点，LegacyClientPlayerGunBridge 会跳过输入处理；测试期间视为游戏内有焦点
+        mc.inGameHasFocus = true
+        val phase = reloadSprintSpamTick++ % 11
+        val down = phase < 8
+        spamForwardDown = down
+        KeyBinding.setKeyBindState(settings.keyBindForward.keyCode, down)
+        KeyBinding.setKeyBindState(settings.keyBindSprint.keyCode, down)
+        if (down) {
+            // 与原版按住冲刺键时 EntityPlayerSP.onLivingUpdate 的处理相同
+            player.isSprinting = true
+        }
+        if (player.isSprinting) {
+            reloadSprintObserved = true
+        }
+        TACZLegacy.logger.info("[FocusedSmoke] SPRINT_SPAM_TICK tick={} down={} moveForward={} sprinting={} focus={} reload={}", reloadSprintSpamTick, down, player.movementInput.moveForward, player.isSprinting, mc.inGameHasFocus, IGunOperator.fromLivingEntity(player).getSynReloadState().stateType)
+    }
+
     private fun handleWaitReload(player: EntityPlayerSP) {
         val operator = IGunOperator.fromLivingEntity(player)
+        val sprintSpam = java.lang.Boolean.getBoolean("tacz.focusedSmoke.reloadSprintSpam")
+        if (sprintSpam && operator.getSynReloadState().stateType.isReloading()) {
+            spamSprintKeys(player, release = false)
+        }
         if (!operator.getSynReloadState().stateType.isReloading()) {
+            if (sprintSpam) {
+                spamSprintKeys(player, release = true)
+                val heldNow = player.heldItemMainhand
+                val ammoNow = (heldNow.item as? IGun)?.getCurrentAmmoCount(heldNow) ?: -1
+                TACZLegacy.logger.info(
+                    "[FocusedSmoke] RELOAD_SPRINT_SPAM ticks={} sprintedDuringReload={} ammo={}->{}",
+                    reloadSprintSpamTick, reloadSprintObserved, reloadStartAmmo, ammoNow,
+                )
+                if (ammoNow <= reloadStartAmmo) {
+                    FocusedSmokeRuntime.markFailure("reload_sprint_spam_no_ammo_added")
+                    step = Step.FAILED
+                    return
+                }
+            }
             val actualMs = max(0L, System.currentTimeMillis() - reloadStartedAtMs)
             val deltaMs = actualMs - expectedReloadDurationMs
             TACZLegacy.logger.info(

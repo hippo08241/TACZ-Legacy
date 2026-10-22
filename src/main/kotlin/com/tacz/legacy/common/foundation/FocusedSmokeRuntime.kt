@@ -1050,10 +1050,75 @@ internal object FocusedSmokeRuntime {
                 val explosionDrop = multipartHealthBefore - dragon.health
                 log("MULTIPART_EXPLOSION_RESULT damage=20 healthDrop=${"%.2f".format(explosionDrop)}")
                 dragon.setDead()
+                multipartStep = 4
+                multipartTicks = 0
+            }
+            4 -> if (multipartTicks >= 5) {
+                // 寄生虫模组 Beckon 等：部件是直接继承 Entity、持有 parent 字段的独立实体（EntityBody）
+                val look = player.lookVec
+                val horizontal = net.minecraft.util.math.Vec3d(look.x, 0.0, look.z).normalize()
+                val host = net.minecraft.entity.monster.EntityPigZombie(world).apply {
+                    setNoAI(true)
+                    maxHurtResistantTime = 0
+                    setLocationAndAngles(player.posX + horizontal.x * 12.0, player.posY, player.posZ + horizontal.z * 12.0, 0.0f, 0.0f)
+                    getEntityAttribute(net.minecraft.entity.SharedMonsterAttributes.MAX_HEALTH).baseValue = 200.0
+                    health = 200.0f
+                }
+                world.spawnEntity(host)
+                val start = net.minecraft.util.math.Vec3d(player.posX, player.posY + player.eyeHeight, player.posZ)
+                val hostCenter = net.minecraft.util.math.Vec3d(host.posX, host.posY + host.height * 0.5, host.posZ)
+                val dir = hostCenter.subtract(start).normalize()
+                val parts = listOf(5.0, 7.0, 9.0).map { distance ->
+                    val point = start.add(dir.scale(distance))
+                    SmokeBodyPart(world).apply {
+                        parent = host
+                        setPosition(point.x, point.y - 0.5, point.z)
+                    }.also(world::spawnEntity)
+                }
+                multipartBodyParts = parts
+                multipartHost = host
+                val gunId = plannedScenario?.regularGunId ?: return markFailure("multipart_no_gun")
+                val gunData = GunDataAccessor.getGunData(gunId) ?: return markFailure("multipart_no_gun_data")
+                val bullet = com.tacz.legacy.common.entity.EntityKineticBullet(world, player, gunData.bulletData, gunId, gunId, gunData.ammoId ?: return markFailure("multipart_no_ammo"), false)
+                val pierce = System.getProperty("tacz.focusedSmoke.multipartPierce", "10").toInt()
+                com.tacz.legacy.common.entity.EntityKineticBullet::class.java.getDeclaredField("pierce").apply { isAccessible = true }.setInt(bullet, pierce)
+                val bulletDir = hostCenter.subtract(bullet.posX, bullet.posY, bullet.posZ).normalize()
+                bullet.shoot(bulletDir.x, bulletDir.y, bulletDir.z, gunData.bulletData.speed, 0.0f)
+                multipartHealthBefore = host.health
+                world.spawnEntity(bullet)
+                multipartStep = 5
+                multipartTicks = 0
+            }
+            5 -> if (multipartTicks >= 20) {
+                val host = multipartHost ?: return markFailure("multipart_host_missing")
+                val drop = multipartHealthBefore - host.health
+                log("MULTIPART_BODY_PART_RESULT parts=${multipartBodyParts.size} healthDrop=${"%.2f".format(drop)}")
+                multipartBodyParts.forEach { it.setDead() }
+                host.setDead()
                 multipartCompleted = true
                 maybeLogPass()
             }
         }
+    }
+
+    private var multipartHost: net.minecraft.entity.EntityLivingBase? = null
+    private var multipartBodyParts: List<SmokeBodyPart> = emptyList()
+
+    /** 模拟寄生虫模组的 EntityBody：普通 Entity，用 parent 字段持有本体并把受到的伤害转发给本体 */
+    internal class SmokeBodyPart(world: net.minecraft.world.World) : net.minecraft.entity.Entity(world) {
+        @JvmField
+        var parent: net.minecraft.entity.EntityLivingBase? = null
+
+        init {
+            setSize(1.0f, 1.0f)
+        }
+
+        override fun entityInit() {}
+        override fun readEntityFromNBT(compound: net.minecraft.nbt.NBTTagCompound) {}
+        override fun writeEntityToNBT(compound: net.minecraft.nbt.NBTTagCompound) {}
+        override fun canBeCollidedWith(): Boolean = true
+        override fun attackEntityFrom(source: net.minecraft.util.DamageSource, amount: Float): Boolean =
+            parent?.attackEntityFrom(source, amount) ?: false
     }
 
     /** 按原版末影龙面向玩家时的形状摆放部件：头-颈-身体-尾巴排成一列朝向玩家，两翼在身体两侧 */

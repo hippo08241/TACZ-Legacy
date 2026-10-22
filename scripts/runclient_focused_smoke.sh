@@ -322,6 +322,7 @@ GRADLE_CMD=(
   "-Dtacz.focusedSmoke.topDownView=${FOCUSED_SMOKE_TOP_DOWN_VIEW:-false}"
   "-Dtacz.focusedSmoke.frontView=${FOCUSED_SMOKE_FRONT_VIEW:-false}"
   "-Dtacz.focusedSmoke.multipartTest=${FOCUSED_SMOKE_MULTIPART:-false}"
+  "-Dtacz.focusedSmoke.reloadSprintSpam=${FOCUSED_SMOKE_RELOAD_SPRINT_SPAM:-false}"
   "-Dtacz.focusedSmoke.multipartPierce=${FOCUSED_SMOKE_MULTIPART_PIERCE:-10}"
   "-Dtacz.focusedSmoke.multipartNoIframes=${FOCUSED_SMOKE_MULTIPART_NO_IFRAMES:-false}"
   "-Dtacz.focusedSmoke.placeFacing=${FOCUSED_SMOKE_PLACE_FACING:-}"
