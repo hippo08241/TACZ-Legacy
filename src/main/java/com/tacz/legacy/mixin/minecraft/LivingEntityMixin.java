@@ -14,6 +14,7 @@ import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.ModifyVariable;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 import java.util.function.Supplier;
@@ -68,6 +69,18 @@ public abstract class LivingEntityMixin implements IGunOperator, KnockBackModifi
         tacz$melee = new LivingEntityMelee(self, tacz$dataHolder, tacz$drawGun);
         tacz$sprint = new LivingEntitySprint(self, tacz$dataHolder);
         tacz$ammoCheck = new LivingEntityAmmoCheck(self, tacz$dataHolder);
+    }
+
+    /**
+     * 换弹期间不能疾跑（与上游 TACZ 一致）：客户端按住疾跑键时原版每 tick 都会调用 setSprinting(true)，
+     * 服务端收到 START_SPRINTING 也会调用；两侧都在这里拦下，换弹不会被乱按移动/疾跑键打断。
+     */
+    @ModifyVariable(method = "setSprinting", at = @At("HEAD"), argsOnly = true)
+    private boolean tacz$blockSprintWhileReloading(boolean sprinting) {
+        if (sprinting && tacz$dataHolder != null && tacz$dataHolder.reloadStateType.isReloading()) {
+            return false;
+        }
+        return sprinting;
     }
 
     // ---- IGunOperator ----

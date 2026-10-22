@@ -17,7 +17,6 @@ import com.tacz.legacy.common.foundation.FocusedSmokeRuntime
 import com.tacz.legacy.common.network.TACZNetworkHandler
 import com.tacz.legacy.common.network.message.client.ClientMessagePlayerAim
 import com.tacz.legacy.common.network.message.client.ClientMessagePlayerBolt
-import com.tacz.legacy.common.network.message.client.ClientMessagePlayerCancelReload
 import com.tacz.legacy.common.network.message.client.ClientMessagePlayerDraw
 import com.tacz.legacy.common.network.message.client.ClientMessagePlayerFireSelect
 import com.tacz.legacy.common.network.message.client.ClientMessagePlayerMelee
@@ -42,9 +41,6 @@ internal object LegacyClientPlayerGunBridge {
     private var lastHeldGunStack: ItemStack? = null
     private var lastShootSuccess: Boolean = false
     private var lastShootKeyDown: Boolean = false
-    private var lastSprinting: Boolean = false
-
-    private const val SPRINT_CANCEL_DEBOUNCE_TICKS = 3
 
     internal fun onClientTick(): Unit {
         val mc = Minecraft.getMinecraft()
@@ -65,7 +61,6 @@ internal object LegacyClientPlayerGunBridge {
         if (!inGame) {
             lastShootSuccess = false
             lastShootKeyDown = false
-            lastSprinting = false
             if (FocusedSmokeRuntime.isForcedAimActive && IGun.mainHandHoldGun(player)) {
                 setAimState(operator, true)
             } else if (operator.getSynIsAiming()) {
@@ -75,7 +70,7 @@ internal object LegacyClientPlayerGunBridge {
             return
         }
 
-        processSprintReloadCancel(player, operator)
+        stopSprintWhileReloading(player, operator)
         processAimInput(player, operator)
         processReloadInput(player, operator)
         processFireSelectInput(player, operator)
@@ -122,19 +117,18 @@ internal object LegacyClientPlayerGunBridge {
         lastHeldGunStack = mainHand.copy()
     }
 
-    private var sprintTrueTicks = 0
-
-    private fun processSprintReloadCancel(player: EntityPlayerSP, operator: IGunOperator): Unit {
-        val sprinting = player.isSprinting
-        if (sprinting) {
-            sprintTrueTicks++
-        } else {
-            sprintTrueTicks = 0
+    /**
+     * 换弹期间不能疾跑：疾跑中开始换弹时立即停止疾跑（之后的 setSprinting(true) 由 LivingEntityMixin 拦截）。
+     * 原实现是“疾跑 3 tick 就取消换弹”，乱按移动/疾跑键时换弹会被反复打断、永远装不上子弹。
+     */
+    private fun stopSprintWhileReloading(player: EntityPlayerSP, operator: IGunOperator): Unit {
+        if (!player.isSprinting || !operator.getSynReloadState().stateType.isReloading()) {
+            return
         }
-        if (sprintTrueTicks == SPRINT_CANCEL_DEBOUNCE_TICKS) {
-            cancelReloadIfNeeded(player.heldItemMainhand, operator)
-        }
-        lastSprinting = sprinting
+        player.isSprinting = false
+        Minecraft.getMinecraft().connection?.sendPacket(
+            CPacketEntityAction(player, CPacketEntityAction.Action.STOP_SPRINTING),
+        )
     }
 
     private fun processAimInput(player: EntityPlayerSP, operator: IGunOperator): Unit {
@@ -420,20 +414,6 @@ internal object LegacyClientPlayerGunBridge {
         return LegacyClientShootCoordinator.attemptShoot(player, operator)
     }
 
-    private fun cancelReloadIfNeeded(stack: net.minecraft.item.ItemStack, operator: IGunOperator): Boolean {
-        val before = operator.getSynReloadState().stateType
-        if (!before.isReloading()) {
-            return false
-        }
-        operator.cancelReload()
-        if (before != operator.getSynReloadState().stateType) {
-            TACZNetworkHandler.sendToServer(ClientMessagePlayerCancelReload())
-            LegacyClientGunAnimationDriver.triggerIfInitialized(stack, GunAnimationConstant.INPUT_CANCEL_RELOAD)
-            return true
-        }
-        return false
-    }
-
     private fun setAimState(operator: IGunOperator, aiming: Boolean): Unit {
         if (operator.getSynIsAiming() == aiming) {
             return
@@ -447,7 +427,6 @@ internal object LegacyClientPlayerGunBridge {
         lastHeldGunStack = null
         lastShootSuccess = false
         lastShootKeyDown = false
-        lastSprinting = false
         LegacyClientShootCoordinator.resetTiming()
         LegacyClientGunAnimationDriver.clearTransientState()
     }
