@@ -703,6 +703,7 @@ internal object FocusedSmokeClientHooks {
         TACZNetworkHandler.sendToServer(ClientMessagePlayerReload())
         LegacyClientGunAnimationDriver.triggerIfInitialized(stack, GunAnimationConstant.INPUT_RELOAD)
         reloadStartedAtMs = System.currentTimeMillis()
+        reloadCompletedAtMs = -1L
         // 由数据脚本 tick_reload 驱动的换弹（如逐发装填的霰弹枪）时长由脚本参数决定，无法用 feed/cooldown 推算
         reloadTimingScripted = GunScriptHooks.find(gunData, "tick_reload") != null
         reloadStartAmmo = currentAmmo
@@ -763,8 +764,66 @@ internal object FocusedSmokeClientHooks {
         TACZLegacy.logger.info("[FocusedSmoke] SPRINT_SPAM_TICK tick={} down={} moveForward={} sprinting={} focus={} reload={}", reloadSprintSpamTick, down, player.movementInput.moveForward, player.isSprinting, mc.inGameHasFocus, IGunOperator.fromLivingEntity(player).getSynReloadState().stateType)
     }
 
+    // ---- 换弹取消测试：换弹进行到一半时由服务端拒绝，客户端应取消换弹并停止换弹动画 ----
+    private var reloadCompletedAtMs: Long = -1L
+    private var reloadCancelDone: Boolean = false
+    private var reloadCancelSentAtMs: Long = -1L
+
+    private fun handleReloadCancelTest(player: EntityPlayerSP, operator: IGunOperator): Boolean {
+        if (reloadCancelDone || !java.lang.Boolean.getBoolean("tacz.focusedSmoke.reloadCancel")) {
+            return false
+        }
+        val stack = player.heldItemMainhand
+        if (reloadCancelSentAtMs < 0L) {
+            if (System.currentTimeMillis() - reloadStartedAtMs < 500L) {
+                return false
+            }
+            val playingBefore = LegacyClientGunAnimationDriver.isReloadAnimationPlaying(stack)
+            TACZLegacy.logger.info("[FocusedSmoke] RELOAD_CANCEL_SENT animationPlaying={} state={}", playingBefore, operator.getSynReloadState().stateType)
+            if (!playingBefore) {
+                FocusedSmokeRuntime.markFailure("reload_cancel_no_animation_before")
+                step = Step.FAILED
+                return true
+            }
+            val server = Minecraft.getMinecraft().integratedServer ?: run {
+                FocusedSmokeRuntime.markFailure("reload_cancel_no_server")
+                step = Step.FAILED
+                return true
+            }
+            val playerId = player.uniqueID
+            server.addScheduledTask {
+                val serverPlayer = server.playerList.getPlayerByUUID(playerId) ?: return@addScheduledTask
+                IGunOperator.fromLivingEntity(serverPlayer).cancelReload()
+                TACZNetworkHandler.sendToPlayer(com.tacz.legacy.common.network.message.event.ServerMessageReloadRejected(), serverPlayer)
+            }
+            reloadCancelSentAtMs = System.currentTimeMillis()
+            return true
+        }
+        if (operator.getSynReloadState().stateType.isReloading()) {
+            if (System.currentTimeMillis() - reloadCancelSentAtMs > 2_000L) {
+                FocusedSmokeRuntime.markFailure("reload_cancel_state_not_cleared")
+                step = Step.FAILED
+            }
+            return true
+        }
+        val playingAfter = LegacyClientGunAnimationDriver.isReloadAnimationPlaying(stack)
+        TACZLegacy.logger.info("[FocusedSmoke] RELOAD_CANCEL_RESULT animationPlaying={} afterMs={}", playingAfter, System.currentTimeMillis() - reloadCancelSentAtMs)
+        if (playingAfter) {
+            FocusedSmokeRuntime.markFailure("reload_cancel_animation_still_playing")
+            step = Step.FAILED
+            return true
+        }
+        reloadCancelDone = true
+        // 取消后重新走一遍正常换弹，确认取消不会影响之后的换弹
+        transition(Step.ATTEMPT_RELOAD, "RELOAD_CANCEL_OK retry_reload")
+        return true
+    }
+
     private fun handleWaitReload(player: EntityPlayerSP) {
         val operator = IGunOperator.fromLivingEntity(player)
+        if (handleReloadCancelTest(player, operator)) {
+            return
+        }
         val sprintSpam = java.lang.Boolean.getBoolean("tacz.focusedSmoke.reloadSprintSpam")
         if (sprintSpam && operator.getSynReloadState().stateType.isReloading()) {
             spamSprintKeys(player, release = false)
@@ -784,21 +843,28 @@ internal object FocusedSmokeClientHooks {
                     return
                 }
             }
-            val actualMs = max(0L, System.currentTimeMillis() - reloadStartedAtMs)
+            if (reloadCompletedAtMs < 0L) {
+                reloadCompletedAtMs = System.currentTimeMillis()
+                TACZLegacy.logger.info(
+                    "[FocusedSmoke] RELOAD_COMPLETED gun={} expectedMs={} actualMs={} deltaMs={}",
+                    reloadGunId ?: currentGunId(player),
+                    expectedReloadDurationMs,
+                    reloadCompletedAtMs - reloadStartedAtMs,
+                    reloadCompletedAtMs - reloadStartedAtMs - expectedReloadDurationMs,
+                )
+            }
+            val actualMs = max(0L, reloadCompletedAtMs - reloadStartedAtMs)
             val deltaMs = actualMs - expectedReloadDurationMs
-            TACZLegacy.logger.info(
-                "[FocusedSmoke] RELOAD_COMPLETED gun={} expectedMs={} actualMs={} deltaMs={}",
-                reloadGunId ?: currentGunId(player),
-                expectedReloadDurationMs,
-                actualMs,
-                deltaMs,
-            )
             if (FocusedSmokeRuntime.realAmmoEnabled) {
                 val heldAfter = player.heldItemMainhand
                 val ammoAfter = (heldAfter.item as? IGun)?.getCurrentAmmoCount(heldAfter) ?: -1
                 val inventoryAfter = countInventoryAmmo(player, heldAfter)
                 val loaded = ammoAfter - reloadStartAmmo
                 val consumed = reloadStartInventoryAmmo - inventoryAfter
+                // 背包弹药由服务端扣除，再经背包同步到达客户端，可能晚于本地换弹状态结束；最多等待 1 秒
+                if ((loaded <= 0 || consumed < loaded) && System.currentTimeMillis() - reloadCompletedAtMs < 1_000L) {
+                    return
+                }
                 TACZLegacy.logger.info(
                     "[FocusedSmoke] REAL_AMMO_RELOAD magazine={}->{} inventory={}->{}",
                     reloadStartAmmo, ammoAfter, reloadStartInventoryAmmo, inventoryAfter,
