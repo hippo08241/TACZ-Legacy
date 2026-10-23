@@ -51,6 +51,7 @@ public object TACZNetworkHandler {
         registerS2C(ServerMessageRefreshRefitScreen.Handler::class.java, ServerMessageRefreshRefitScreen::class.java)
         registerS2C(ServerMessageSyncBaseTimestamp.Handler::class.java, ServerMessageSyncBaseTimestamp::class.java)
         registerS2C(ServerMessageBulletHitBlock.Handler::class.java, ServerMessageBulletHitBlock::class.java)
+        registerS2C(ServerMessageReloadRejected.Handler::class.java, ServerMessageReloadRejected::class.java)
     }
 
     /**

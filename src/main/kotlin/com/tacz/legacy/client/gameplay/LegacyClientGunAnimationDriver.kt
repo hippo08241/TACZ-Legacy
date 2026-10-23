@@ -160,6 +160,33 @@ internal object LegacyClientGunAnimationDriver {
         return true
     }
 
+    /**
+     * 换弹被取消时停止换弹动画。
+     * 先输入 cancel_reload，让处理了该输入的状态机（如霰弹枪的逐发装填）自行转出；
+     * 默认状态机等大多数枪包脚本不处理该输入，因此再强制停止仍在播放的 reload* 动画。
+     *
+     * @return 被强制停止的动画轨道数
+     */
+    internal fun cancelReloadAnimation(stack: ItemStack): Int {
+        val display = resolveDisplayInstance(stack) ?: return 0
+        val stateMachine = display.animationStateMachine ?: return 0
+        if (!stateMachine.isInitialized) {
+            return 0
+        }
+        trigger(stateMachine, GunAnimationConstant.INPUT_CANCEL_RELOAD, stack, display)
+        return stateMachine.animationController.stopAnimations(::isReloadAnimationName)
+    }
+
+    /** 当前是否有换弹动画在播放（含过渡中） */
+    internal fun isReloadAnimationPlaying(stack: ItemStack): Boolean {
+        val display = resolveDisplayInstance(stack) ?: return false
+        val controller = display.animationStateMachine?.animationController ?: return false
+        return controller.hasActiveAnimation(::isReloadAnimationName)
+    }
+
+    /** 枪包换弹动画的命名约定：reload_empty / reload_tactical / reload_intro / reload_loop / reload_end 等 */
+    private fun isReloadAnimationName(name: String): Boolean = name.startsWith("reload")
+
     internal fun clearTransientState(): Unit {
         exitingStateMachine = null
         exitingStack = null

@@ -7,6 +7,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Queue;
+import java.util.function.Predicate;
 import java.util.function.Supplier;
 
 public class AnimationController {
@@ -53,6 +54,48 @@ public class AnimationController {
         if (track < animationQueue.size()) {
             animationQueue.set(track, null);
         }
+    }
+
+    /**
+     * 停止所有名称满足 {@code nameFilter} 的动画（包括正在过渡到的目标动画），并清空这些轨道上排队的后续动画。
+     * 停止后的效果与动画自然播放结束（PLAY_ONCE_STOP）相同。
+     *
+     * @return 被停止的轨道数
+     */
+    synchronized public int stopAnimations(Predicate<String> nameFilter) {
+        int stopped = 0;
+        for (int track = 0; track < currentRunners.size(); track++) {
+            ObjectAnimationRunner runner = currentRunners.get(track);
+            if (runner == null) {
+                continue;
+            }
+            ObjectAnimationRunner transitionTo = runner.getTransitionTo();
+            boolean matches = nameFilter.test(runner.getAnimation().name)
+                    || (runner.isTransitioning() && transitionTo != null && nameFilter.test(transitionTo.getAnimation().name));
+            if (!matches) {
+                continue;
+            }
+            removeAnimation(track);
+            stopped++;
+        }
+        return stopped;
+    }
+
+    /** 是否有名称满足 {@code nameFilter} 且尚未结束的动画（包括正在过渡到的目标动画） */
+    synchronized public boolean hasActiveAnimation(Predicate<String> nameFilter) {
+        for (ObjectAnimationRunner runner : currentRunners) {
+            if (runner == null) {
+                continue;
+            }
+            if (!runner.isStopped() && nameFilter.test(runner.getAnimation().name)) {
+                return true;
+            }
+            ObjectAnimationRunner transitionTo = runner.getTransitionTo();
+            if (runner.isTransitioning() && transitionTo != null && nameFilter.test(transitionTo.getAnimation().name)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     public void queueAnimation(int track, Queue<AnimationPlan> queue) {

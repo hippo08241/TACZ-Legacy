@@ -68,6 +68,13 @@ internal class ClientProxy : CommonProxy() {
         super.init()
         LegacyKeyBindings.registerAll()
         LegacyParticleFactoryRegistry.register()
+        // 本地玩家的换弹被取消（服务端拒绝、其他模组调用 cancelReload 等）时停止换弹动画
+        com.tacz.legacy.common.entity.shooter.ReloadCancelNotifier.clientListener = { entity ->
+            val player = net.minecraft.client.Minecraft.getMinecraft().player
+            if (player != null && entity === player) {
+                com.tacz.legacy.client.gameplay.LegacyClientGunAnimationDriver.cancelReloadAnimation(player.heldItemMainhand)
+            }
+        }
 
         // Wire TEISR for gun items (requires "parent": "builtin/entity" in item model JSON)
         LegacyItems.MODERN_KINETIC_GUN.setTileEntityItemStackRenderer(TACZGunItemRenderer)

@@ -34,8 +34,10 @@ public class LivingEntityReload(
 
         // 已经在换弹中
         if (data.reloadStateType.isReloading()) return
-        // 还没有完成切枪
-        if (draw.getDrawCoolDown() != 0L) return
+        // 还没有完成切枪。服务端与射击相同，给出 SYNC_GRACE_MS 的宽限：客户端按本地计时判定切枪完成后发出请求，
+        // 服务端的切枪计时晚于客户端开始，否则会拒绝客户端已经开始的换弹
+        val drawGrace = if (shooter.world.isRemote) 0L else LivingEntityShoot.SYNC_GRACE_MS
+        if (draw.getDrawCoolDown() > drawGrace) return
         // 在拉栓
         if (data.isBolting) return
 
@@ -135,6 +137,7 @@ public class LivingEntityReload(
 
         data.reloadStateType = ReloadState.StateType.NOT_RELOADING
         data.reloadTimestamp = -1L
+        ReloadCancelNotifier.notifyCancelled(shooter)
         return true
     }
 
