@@ -1175,7 +1175,7 @@ internal object FocusedSmokeRuntime {
                 srpStep = 3
                 srpTicks = 0
             }
-            3 -> if (srpTicks >= 20) {
+            3 -> if (srpTicks >= 3) {
                 val beckon = srpBeckon ?: return markFailure("srp_beckon_missing")
                 log("SRP_BULLET_RESULT shot=${srpShot + 1} healthDrop=${"%.2f".format(srpHealthBefore - beckon.health)} health=${beckon.health}/${beckon.maxHealth}")
                 srpShot++
