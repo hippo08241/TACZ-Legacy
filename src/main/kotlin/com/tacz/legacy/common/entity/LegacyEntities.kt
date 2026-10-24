@@ -105,6 +105,8 @@ internal class EntityKineticBullet : EntityThrowable, IEntityAdditionalSpawnData
             return Vec3d(direction.x / length, direction.y / length, direction.z / length)
         }
 
+        private val FOCUSED_SMOKE_HIT_LOG: Boolean = java.lang.Boolean.getBoolean("tacz.focusedSmoke")
+
         private fun resolveFocusedSmokeBulletSpeedMultiplier(): Double {
             val rawValue = System.getProperty(FOCUSED_SMOKE_BULLET_SPEED_MULTIPLIER_PROPERTY)?.toDoubleOrNull()
                 ?: return 1.0
@@ -604,6 +606,10 @@ internal class EntityKineticBullet : EntityThrowable, IEntityAdditionalSpawnData
             for ((entity, hitVec) in hitEntities) {
                 // 多部件实体：同一发子弹只结算最先命中的那个部件；之前 tick 已命中的目标也不再重复结算
                 val root = MultiPartTargets.rootOf(entity, candidates)
+                if (FOCUSED_SMOKE_HIT_LOG) {
+                    TACZLegacy.logger.info("[FocusedSmoke] BULLET_ENTITY_HIT target={} root={} duplicate={} pierce={}",
+                        entity.javaClass.simpleName, root.javaClass.simpleName, damagedTargetIds.contains(root.entityId), pierce)
+                }
                 if (root === thrower || !damagedTargetIds.add(root.entityId)) continue
                 val entityHitResult = RayTraceResult(entity, hitVec)
                 if (!net.minecraftforge.event.ForgeEventFactory.onProjectileImpact(this, entityHitResult)) {

@@ -295,6 +295,7 @@ cd "$ROOT_DIR"
 GRADLE_CMD=(
   ./gradlew
   --no-daemon
+  "-Ptacz.devSrp=${FOCUSED_SMOKE_WITH_SRP:-false}"
   -Dtacz.focusedSmoke=true
   -Dtacz.focusedSmoke.autoWorld=true
   "-Dtacz.focusedSmoke.worldFolder=${WORLD_FOLDER}"
@@ -324,6 +325,8 @@ GRADLE_CMD=(
   "-Dtacz.focusedSmoke.multipartTest=${FOCUSED_SMOKE_MULTIPART:-false}"
   "-Dtacz.focusedSmoke.reloadSprintSpam=${FOCUSED_SMOKE_RELOAD_SPRINT_SPAM:-false}"
   "-Dtacz.focusedSmoke.reloadCancel=${FOCUSED_SMOKE_RELOAD_CANCEL:-false}"
+  "-Dtacz.focusedSmoke.srpBeckon=${FOCUSED_SMOKE_SRP_BECKON:-false}"
+  "-Dtacz.focusedSmoke.srpPierce=${FOCUSED_SMOKE_SRP_PIERCE:-}"
   "-Dtacz.focusedSmoke.thirdPersonView=${FOCUSED_SMOKE_THIRD_PERSON_VIEW:-0}"
   "-Dtacz.focusedSmoke.muzzleFlashHoldMs=${FOCUSED_SMOKE_MUZZLE_FLASH_HOLD_MS:-50}"
   "-Dtacz.focusedSmoke.multipartPierce=${FOCUSED_SMOKE_MULTIPART_PIERCE:-10}"

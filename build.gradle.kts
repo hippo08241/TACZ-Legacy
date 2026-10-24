@@ -191,6 +191,10 @@ dependencies {
     compileOnly(rfg.deobf("curse.maven:mouse-tweaks-461660:5876158"))
     // JEI/HEI 兼容（可选依赖，仅编译期使用 API）
     compileOnly(rfg.deobf("curse.maven:had-enough-items-557549:4543375"))
+    // 호환성 테스트용: -Ptacz.devSrp=true 일 때만 개발 클라이언트에 Scape and Run: Parasites를 넣는다
+    if (project.findProperty("tacz.devSrp")?.toString()?.toBoolean() == true) {
+        runtimeOnly(rfg.deobf("curse.maven:scape-and-run-parasites-348025:8787918"))
+    }
 
     testImplementation("junit:junit:4.13.2")
 

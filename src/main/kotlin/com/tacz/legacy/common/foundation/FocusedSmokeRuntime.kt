@@ -729,6 +729,9 @@ internal object FocusedSmokeRuntime {
         if (multipartTestEnabled && !multipartCompleted) {
             return
         }
+        if (srpBeckonTestEnabled && !srpBeckonCompleted) {
+            return
+        }
         if (requireTracerFrameEnabled && !tracerFrameObserved) {
             return
         }
@@ -1097,6 +1100,93 @@ internal object FocusedSmokeRuntime {
                 host.setDead()
                 multipartCompleted = true
                 maybeLogPass()
+            }
+        }
+    }
+
+    // ---- SRP Beckon Stage 4 测试：从头顶正上方垂直向下射击，记录命中的实体与扣血量 ----
+
+    private val srpBeckonTestEnabled: Boolean
+        get() = java.lang.Boolean.getBoolean("tacz.focusedSmoke.srpBeckon")
+
+    @Volatile
+    private var srpBeckonCompleted: Boolean = false
+    private var srpStep: Int = 0
+    private var srpTicks: Int = 0
+    private var srpBeckon: net.minecraft.entity.EntityLivingBase? = null
+    private var srpHealthBefore: Float = 0.0f
+    private var srpShot: Int = 0
+
+    @SubscribeEvent
+    fun onServerTickSrpBeckon(event: net.minecraftforge.fml.common.gameevent.TickEvent.ServerTickEvent) {
+        if (!enabled || !srpBeckonTestEnabled || srpBeckonCompleted || !serverGearReady ||
+            event.phase != net.minecraftforge.fml.common.gameevent.TickEvent.Phase.END
+        ) {
+            return
+        }
+        val server = net.minecraftforge.fml.common.FMLCommonHandler.instance().minecraftServerInstance ?: return
+        val player = focusedPlayerId?.let(server.playerList::getPlayerByUUID) ?: return
+        val world = player.serverWorld
+        srpTicks++
+        when (srpStep) {
+            0 -> {
+                world.worldInfo.difficulty = net.minecraft.world.EnumDifficulty.NORMAL
+                val entity = net.minecraft.entity.EntityList.createEntityByIDFromName(
+                    ResourceLocation("srparasites", "beckon_siv"), world,
+                ) as? net.minecraft.entity.EntityLiving ?: return markFailure("srp_beckon_not_registered")
+                val look = player.lookVec
+                val horizontal = net.minecraft.util.math.Vec3d(look.x, 0.0, look.z).normalize()
+                val x = player.posX + horizontal.x * 8.0
+                val z = player.posZ + horizontal.z * 8.0
+                entity.setLocationAndAngles(x, world.getHeight(net.minecraft.util.math.BlockPos(x, 0.0, z)).y.toDouble(), z, 0.0f, 0.0f)
+                entity.setNoAI(true)
+                world.spawnEntity(entity)
+                srpBeckon = entity
+                log("SRP_BECKON_SPAWNED class=${entity.javaClass.simpleName} size=${entity.width}x${entity.height} health=${entity.health}/${entity.maxHealth}")
+                srpStep = 1
+                srpTicks = 0
+            }
+            1 -> if (srpTicks >= 40) {
+                val beckon = srpBeckon ?: return markFailure("srp_beckon_missing")
+                val around = world.getEntitiesWithinAABBExcludingEntity(beckon, beckon.entityBoundingBox.grow(4.0))
+                    .filter { it !== player }
+                log("SRP_BECKON_STATE pos=%.1f,%.1f,%.1f bb=%s parts=%s".format(beckon.posX, beckon.posY, beckon.posZ, beckon.entityBoundingBox,
+                    beckon.parts?.joinToString { "${it.javaClass.simpleName}@${it.entityBoundingBox}" }))
+                around.forEach { log("SRP_BECKON_NEARBY class=${it.javaClass.name} collidable=${it.canBeCollidedWith()} bb=${it.entityBoundingBox}") }
+                srpStep = 2
+                srpTicks = 0
+            }
+            2 -> {
+                val beckon = srpBeckon ?: return markFailure("srp_beckon_missing")
+                val gunId = plannedScenario?.regularGunId ?: return markFailure("srp_no_gun")
+                val gunData = GunDataAccessor.getGunData(gunId) ?: return markFailure("srp_no_gun_data")
+                val bullet = com.tacz.legacy.common.entity.EntityKineticBullet(world, player, gunData.bulletData, gunId, gunId,
+                    gunData.ammoId ?: return markFailure("srp_no_ammo"), false)
+                System.getProperty("tacz.focusedSmoke.srpPierce")?.toIntOrNull()?.let { pierce ->
+                    com.tacz.legacy.common.entity.EntityKineticBullet::class.java.getDeclaredField("pierce").apply { isAccessible = true }.setInt(bullet, pierce)
+                }
+                // 头顶正上方 4 格处垂直向下发射
+                bullet.setPosition(beckon.posX, beckon.entityBoundingBox.maxY + 4.0, beckon.posZ)
+                bullet.shoot(0.0, -1.0, 0.0, gunData.bulletData.speed, 0.0f)
+                srpHealthBefore = beckon.health
+                beckon.hurtResistantTime = 0
+                world.spawnEntity(bullet)
+                log("SRP_BULLET_FIRED gun=$gunId damage=${gunData.bulletData.damage} pierce=${gunData.bulletData.pierce} shot=${srpShot + 1}")
+                srpStep = 3
+                srpTicks = 0
+            }
+            3 -> if (srpTicks >= 20) {
+                val beckon = srpBeckon ?: return markFailure("srp_beckon_missing")
+                log("SRP_BULLET_RESULT shot=${srpShot + 1} healthDrop=${"%.2f".format(srpHealthBefore - beckon.health)} health=${beckon.health}/${beckon.maxHealth}")
+                srpShot++
+                if (srpShot < 3) {
+                    srpStep = 2
+                } else {
+                    beckon.setDead()
+                    srpBeckonCompleted = true
+                    maybeLogPass()
+                }
+                srpTicks = 0
             }
         }
     }
