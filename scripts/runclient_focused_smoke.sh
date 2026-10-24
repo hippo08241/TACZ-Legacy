@@ -324,6 +324,8 @@ GRADLE_CMD=(
   "-Dtacz.focusedSmoke.multipartTest=${FOCUSED_SMOKE_MULTIPART:-false}"
   "-Dtacz.focusedSmoke.reloadSprintSpam=${FOCUSED_SMOKE_RELOAD_SPRINT_SPAM:-false}"
   "-Dtacz.focusedSmoke.reloadCancel=${FOCUSED_SMOKE_RELOAD_CANCEL:-false}"
+  "-Dtacz.focusedSmoke.thirdPersonView=${FOCUSED_SMOKE_THIRD_PERSON_VIEW:-0}"
+  "-Dtacz.focusedSmoke.muzzleFlashHoldMs=${FOCUSED_SMOKE_MUZZLE_FLASH_HOLD_MS:-50}"
   "-Dtacz.focusedSmoke.multipartPierce=${FOCUSED_SMOKE_MULTIPART_PIERCE:-10}"
   "-Dtacz.focusedSmoke.multipartNoIframes=${FOCUSED_SMOKE_MULTIPART_NO_IFRAMES:-false}"
   "-Dtacz.focusedSmoke.placeFacing=${FOCUSED_SMOKE_PLACE_FACING:-}"
@@ -414,6 +416,8 @@ while true; do
       echo "[TACZ-Legacy] focused smoke screenshot grace expired; shutting down with remaining markers unmet."
     fi
     RESULT="pass"
+    # 外部截图用：PASS 之后保持客户端运行一段时间
+    sleep "${FOCUSED_SMOKE_PASS_DELAY_SECONDS:-0}"
     echo "[TACZ-Legacy] focused smoke pass marker reached; shutting down client automatically..."
     stop_process_group
     break

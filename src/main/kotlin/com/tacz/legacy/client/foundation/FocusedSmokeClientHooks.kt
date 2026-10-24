@@ -163,7 +163,10 @@ internal object FocusedSmokeClientHooks {
         if (FocusedSmokeRuntime.hasPassed()) {
             FocusedSmokeRuntime.setForcedAimActive(false)
             step = Step.COMPLETE
-            restorePauseOnLostFocus(mc)
+            // 截图模式（延长了枪口火焰显示）下不恢复“失焦暂停”，否则 Xvfb 下会立即弹出暂停菜单挡住画面
+            if (java.lang.Long.getLong("tacz.focusedSmoke.muzzleFlashHoldMs", 50L) <= 50L) {
+                restorePauseOnLostFocus(mc)
+            }
             return
         }
         val world = mc.world
@@ -175,7 +178,8 @@ internal object FocusedSmokeClientHooks {
 
         if (worldReadyAtMs == 0L) {
             worldReadyAtMs = System.currentTimeMillis()
-            mc.gameSettings.thirdPersonView = 0
+            // 0 = 第一人称；1/2 = 第三人称（背后/正面），用于检查第三人称下的枪口火焰等效果
+            mc.gameSettings.thirdPersonView = Integer.getInteger("tacz.focusedSmoke.thirdPersonView", 0).coerceIn(0, 2)
             transition(Step.WAIT_GEAR, "CLIENT_WORLD_READY dimension=${world.provider.dimension} player=${player.name}")
         }
 
@@ -1217,14 +1221,28 @@ internal object FocusedSmokeClientHooks {
         }
     }
 
+    private var finalizeHoldStartMs: Long = -1L
+
     private fun finalizeRun() {
+        // 截图用：延长了枪口火焰显示时间时，结束前先停留同样长的时间，给外部截图留出窗口
+        val holdMs = java.lang.Long.getLong("tacz.focusedSmoke.muzzleFlashHoldMs", 50L)
+        if (holdMs > 50L) {
+            val now = System.currentTimeMillis()
+            if (finalizeHoldStartMs < 0L) {
+                finalizeHoldStartMs = now
+            }
+            if (now - finalizeHoldStartMs < holdMs) {
+                return
+            }
+        }
         clearKeepAliveGuiIfNeeded(Minecraft.getMinecraft())
         if (FocusedSmokeRuntime.hasPassed()) {
             step = Step.COMPLETE
             return
         }
         val plan = FocusedSmokeRuntime.currentPlan()
-        val animationReady = FocusedSmokeRuntime.animationObserved
+        // 第三人称下不会渲染第一人称枪械动画
+        val animationReady = FocusedSmokeRuntime.animationObserved || Minecraft.getMinecraft().gameSettings.thirdPersonView != 0
         val projectileReady = FocusedSmokeRuntime.regularProjectileObserved
         val explosionReady = plan?.explosiveGunId == null || FocusedSmokeRuntime.explosionObserved
         val hitReady = FocusedSmokeRuntime.hitTargetSatisfied()
