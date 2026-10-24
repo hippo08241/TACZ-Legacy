@@ -10,6 +10,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.GlStateManager;
 import net.minecraft.client.renderer.OpenGlHelper;
 import net.minecraft.util.ResourceLocation;
+import org.lwjgl.opengl.GL11;
 
 import javax.annotation.Nullable;
 
@@ -22,8 +23,8 @@ import javax.annotation.Nullable;
  */
 public class MuzzleFlashRender implements IFunctionalRenderer {
     private static final SlotModel MUZZLE_FLASH_MODEL = new SlotModel(true);
-    /** 50ms display time */
-    private static final long TIME_RANGE = 50;
+    /** 50ms display time（测试截图时可用 tacz.focusedSmoke.muzzleFlashHoldMs 延长） */
+    private static final long TIME_RANGE = Long.getLong("tacz.focusedSmoke.muzzleFlashHoldMs", 50L);
     private static final String FOCUSED_SMOKE_PROPERTY = "tacz.focusedSmoke";
 
     public static boolean isSelf = false;
@@ -90,6 +91,10 @@ public class MuzzleFlashRender implements IFunctionalRenderer {
         float previousLightY = OpenGlHelper.lastBrightnessY;
 
         Minecraft.getMinecraft().getTextureManager().bindTexture(registeredTexture);
+        // 火焰是自发光的：关闭 GL 光照（否则会按法线被枪模型的光照压暗，看起来像落在阴影里），并用不染色的纯白顶点色
+        boolean lightingWasEnabled = GL11.glIsEnabled(GL11.GL_LIGHTING);
+        GlStateManager.disableLighting();
+        GlStateManager.color(1.0f, 1.0f, 1.0f, 1.0f);
 
         try {
             // Render translucent background layer
@@ -133,6 +138,9 @@ public class MuzzleFlashRender implements IFunctionalRenderer {
             GlStateManager.popMatrix();
         } finally {
             OpenGlHelper.setLightmapTextureCoords(OpenGlHelper.lightmapTexUnit, previousLightX, previousLightY);
+            if (lightingWasEnabled) {
+                GlStateManager.enableLighting();
+            }
             GlStateManager.disableBlend();
             ResourceLocation activeGunTexture = bedrockGunModel.getActiveGunTexture();
             if (activeGunTexture != null) {

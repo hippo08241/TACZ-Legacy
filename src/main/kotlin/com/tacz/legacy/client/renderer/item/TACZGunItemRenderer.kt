@@ -160,13 +160,20 @@ internal object TACZGunItemRenderer : TileEntityItemStackRenderer() {
         displayInstance?.setActiveGunTexture(registeredTexture)
         if (runtimeModel != null) {
             runtimeModel.renderHand = false
-            ShellRender.isSelf = true
-            MuzzleFlashRender.isSelf = true
+            // 枪口火焰/抛壳只属于本地玩家手中正在开火的那把枪：地上的掉落物、展示框、其他玩家手里的枪不应跟着闪
+            val isLocalHeldGun = transformType == ItemCameraTransforms.TransformType.THIRD_PERSON_RIGHT_HAND &&
+                stack === Minecraft.getMinecraft().player?.heldItemMainhand
+            ShellRender.isSelf = isLocalHeldGun
+            MuzzleFlashRender.isSelf = isLocalHeldGun
+            // 火焰贴图按当前这把枪设置；原来只在第一人称渲染时设置，没在第一人称开过火的枪第三人称看不到火焰
+            runtimeModel.muzzleFlashRender?.setActiveMuzzleFlash(display.muzzleFlash)
             val previousBeamContext = BeamRenderer.pushRenderContext(beamRenderContext)
             try {
                 runtimeModel.render(stack)
             } finally {
                 BeamRenderer.popRenderContext(previousBeamContext)
+                ShellRender.isSelf = false
+                MuzzleFlashRender.isSelf = false
             }
             captureBloomIfSupported(transformType, registeredTexture, runtimeModel) {
                 runtimeModel.renderHand = false
